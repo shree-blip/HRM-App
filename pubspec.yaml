@@ -1,0 +1,43 @@
+name: hrm_focus_flutter
+description: "Focus HRM — Flutter mobile app (iOS & Android). Backed by the existing Supabase project."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Backend (same Supabase project as the React app)
+  supabase_flutter: ^2.8.0
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Routing
+  go_router: ^14.2.0
+
+  # Secure local session storage (replaces web localStorage)
+  flutter_secure_storage: ^9.2.2
+
+  # Environment / config
+  flutter_dotenv: ^5.1.0
+
+  # Form validation
+  form_builder_validators: ^11.0.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
+    - assets/images/

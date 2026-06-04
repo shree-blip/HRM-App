@@ -1,0 +1,49 @@
+# ── Secrets ───────────────────────────────────────────────
+# Never commit real Supabase keys. .env is loaded at runtime / bundled locally only.
+.env
+*.env.local
+
+# ── Flutter / Dart ────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+pubspec.lock
+
+# ── IDE ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# ── Android ───────────────────────────────────────────────
+android/.gradle/
+android/app/debug
+android/app/profile
+android/app/release
+android/local.properties
+android/key.properties
+**/*.keystore
+**/*.jks
+
+# ── iOS / macOS ───────────────────────────────────────────
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+**/DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# ── Misc ──────────────────────────────────────────────────
+*.log
+.DS_Store
+coverage/
