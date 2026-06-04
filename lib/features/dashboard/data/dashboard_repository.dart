@@ -225,4 +225,397 @@ class DashboardRepository {
       onLeaveTodayNames: leave.onLeaveTodayNames,
     );
   }
+
+  // ── TasksWidget ────────────────────────────────────────
+  Future<List<TaskItem>> recentTasks({int limit = 4}) async {
+    final rows = await supabase
+        .from('tasks')
+        .select('id, title, client_name, priority, status, due_date, created_at')
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return (rows as List)
+        .map((r) => TaskItem.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  // ── LeaveWidget ────────────────────────────────────────
+  Future<List<LeaveItem>> recentLeave({int limit = 5}) async {
+    final rows = await supabase
+        .from('leave_requests')
+        .select(
+          'id, user_id, leave_type, start_date, end_date, days, status, is_half_day, created_at',
+        )
+        .order('created_at', ascending: false)
+        .limit(limit);
+    final list =
+        (rows as List).map((r) => (r as Map).cast<String, dynamic>()).toList();
+
+    final ids = list
+        .map((m) => m['user_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    final nameMap = <String, String>{};
+    if (ids.isNotEmpty) {
+      final profs = await supabase
+          .from('profiles')
+          .select('user_id, first_name, last_name')
+          .inFilter('user_id', ids);
+      for (final p in profs as List) {
+        final m = p as Map;
+        nameMap[m['user_id'] as String] =
+            '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+      }
+    }
+    return list
+        .map((m) => LeaveItem.fromMap(m, nameMap[m['user_id']] ?? ''))
+        .toList();
+  }
+
+  // ── DailyTimelineWidget ────────────────────────────────
+  Future<List<MilestoneItem>> milestones({
+    int withinDays = 14,
+    int limit = 3,
+  }) async {
+    final rows = await supabase
+        .from('profiles')
+        .select('first_name, last_name, date_of_birth, joining_date, status')
+        .neq('status', 'inactive');
+    final npt = _nowNpt();
+    final today = DateTime(npt.year, npt.month, npt.day);
+    final items = <MilestoneItem>[];
+
+    for (final r in rows as List) {
+      final m = r as Map;
+      final name =
+          '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+      void addIfSoon(String? dateStr, String type) {
+        if (dateStr == null) return;
+        final d = DateTime.tryParse(dateStr);
+        if (d == null) return;
+        var next = DateTime(today.year, d.month, d.day);
+        if (next.isBefore(today)) next = DateTime(today.year + 1, d.month, d.day);
+        final days = next.difference(today).inDays;
+        if (days >= 0 && days <= withinDays) {
+          items.add(MilestoneItem(
+            name: name,
+            type: type,
+            date: next,
+            daysUntil: days,
+            years: type == 'anniversary' ? next.year - d.year : null,
+          ),);
+        }
+      }
+
+      addIfSoon(m['date_of_birth'] as String?, 'birthday');
+      addIfSoon(m['joining_date'] as String?, 'anniversary');
+    }
+    items.sort((a, b) => a.daysUntil.compareTo(b.daysUntil));
+    return items.take(limit).toList();
+  }
+
+  Future<List<CalendarItem>> upcomingDeadlines({int limit = 3}) async {
+    final today = _dateKey(_nowNpt());
+    final rows = await supabase
+        .from('calendar_events')
+        .select('title, description, event_date')
+        .eq('is_active', true)
+        .eq('event_type', 'deadline')
+        .gte('event_date', today)
+        .order('event_date', ascending: true)
+        .limit(limit);
+    return (rows as List)
+        .map((r) => CalendarItem.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<List<HolidayItem>> upcomingHolidays({int limit = 3}) async {
+    final rows = await supabase
+        .from('company_holidays')
+        .select('name, date, is_recurring');
+    final npt = _nowNpt();
+    final today = DateTime(npt.year, npt.month, npt.day);
+    final items = <HolidayItem>[];
+    for (final r in rows as List) {
+      final m = r as Map;
+      final ds = m['date'] as String?;
+      if (ds == null) continue;
+      final d = DateTime.tryParse(ds);
+      if (d == null) continue;
+      DateTime occ;
+      if (m['is_recurring'] == true) {
+        occ = DateTime(today.year, d.month, d.day);
+        if (occ.isBefore(today)) occ = DateTime(today.year + 1, d.month, d.day);
+      } else {
+        occ = DateTime(d.year, d.month, d.day);
+      }
+      final days = occ.difference(today).inDays;
+      if (days >= 0) {
+        items.add(HolidayItem(
+          name: (m['name'] ?? '') as String,
+          date: occ,
+          daysUntil: days,
+        ),);
+      }
+    }
+    items.sort((a, b) => a.daysUntil.compareTo(b.daysUntil));
+    return items.take(limit).toList();
+  }
+
+  // ── PersonalReportsWidget (employee) ───────────────────
+  Future<PersonalReport> personalReport(String userId) async {
+    final hours = await monthlyHours(userId);
+    final npt = _nowNpt();
+    final daysInMonth = DateTime(npt.year, npt.month + 1, 0).day;
+    var workingDays = 0;
+    for (var day = 1; day <= daysInMonth; day++) {
+      if (DateTime(npt.year, npt.month, day).weekday < 6) workingDays++;
+    }
+    final target = workingDays * 8.0;
+
+    final balances = await leaveBalances(userId);
+    LeaveBalanceItem? annual;
+    for (final b in balances) {
+      if (b.leaveType.toLowerCase().contains('annual')) {
+        annual = b;
+        break;
+      }
+    }
+
+    final managers = <String>[];
+    var teammateCount = 0;
+    try {
+      final empId =
+          await supabase.rpc('get_employee_id_for_user', params: {'_user_id': userId});
+      if (empId is String) {
+        final tm = await supabase
+            .from('team_members')
+            .select('manager_employee_id')
+            .eq('member_employee_id', empId);
+        final mgrIds = (tm as List)
+            .map((r) => (r as Map)['manager_employee_id'] as String?)
+            .whereType<String>()
+            .toSet()
+            .toList();
+        if (mgrIds.isNotEmpty) {
+          final emps = await supabase
+              .from('employees')
+              .select('first_name, last_name')
+              .inFilter('id', mgrIds);
+          for (final e in emps as List) {
+            final m = e as Map;
+            final n = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+            if (n.isNotEmpty) managers.add(n);
+          }
+          final mates = await supabase
+              .from('team_members')
+              .select('member_employee_id')
+              .inFilter('manager_employee_id', mgrIds);
+          final mateIds = (mates as List)
+              .map((r) => (r as Map)['member_employee_id'] as String?)
+              .whereType<String>()
+              .toSet()
+            ..remove(empId);
+          teammateCount = mateIds.length;
+        }
+      }
+    } catch (_) {
+      // Best-effort hierarchy; degrade gracefully.
+    }
+
+    return PersonalReport(
+      monthlyHours: hours,
+      targetHours: target,
+      annual: annual,
+      managerNames: managers,
+      teammateCount: teammateCount,
+    );
+  }
+
+  // ── TeamReportsWidget (manager/admin) ──────────────────
+  Future<TeamReport> teamReport() async {
+    final results = await Future.wait([
+      employeeCount(),
+      _clockedInToday(),
+      leaveStats(),
+      _taskCompletion(),
+    ]);
+    final leave = results[2] as ({int pending, List<String> onLeaveTodayNames});
+    final tc = results[3] as ({int total, int done});
+    return TeamReport(
+      teamSize: results[0] as int,
+      clockedInToday: results[1] as int,
+      pendingLeaves: leave.pending,
+      totalTasks: tc.total,
+      doneTasks: tc.done,
+    );
+  }
+
+  Future<int> _clockedInToday() async {
+    final npt = _nowNpt();
+    final dayStartUtc = DateTime.utc(npt.year, npt.month, npt.day)
+        .subtract(const Duration(hours: 5, minutes: 45));
+    final rows = await supabase
+        .from('attendance_logs')
+        .select('id')
+        .gte('clock_in', dayStartUtc.toIso8601String())
+        .isFilter('clock_out', null);
+    return (rows as List).length;
+  }
+
+  Future<({int total, int done})> _taskCompletion() async {
+    final rows = await supabase.from('tasks').select('status');
+    var total = 0;
+    var done = 0;
+    for (final r in rows as List) {
+      total++;
+      if ((r as Map)['status'] == 'done') done++;
+    }
+    return (total: total, done: done);
+  }
+}
+
+/// ── Additional models for the new dashboard widgets ──────
+
+class TaskItem {
+  const TaskItem({
+    required this.id,
+    required this.title,
+    required this.clientName,
+    required this.priority,
+    required this.status,
+    required this.dueDate,
+  });
+
+  final String id;
+  final String title;
+  final String? clientName;
+  final String? priority;
+  final String? status;
+  final String? dueDate;
+
+  bool get isDone => status == 'done';
+
+  factory TaskItem.fromMap(Map<String, dynamic> m) => TaskItem(
+        id: m['id'] as String,
+        title: (m['title'] ?? '') as String,
+        clientName: m['client_name'] as String?,
+        priority: m['priority'] as String?,
+        status: m['status'] as String?,
+        dueDate: m['due_date'] as String?,
+      );
+}
+
+class LeaveItem {
+  const LeaveItem({
+    required this.leaveType,
+    required this.startDate,
+    required this.endDate,
+    required this.days,
+    required this.status,
+    required this.employeeName,
+    required this.isHalfDay,
+  });
+
+  final String leaveType;
+  final String startDate;
+  final String endDate;
+  final num days;
+  final String status;
+  final String employeeName;
+  final bool isHalfDay;
+
+  factory LeaveItem.fromMap(Map<String, dynamic> m, String name) => LeaveItem(
+        leaveType: (m['leave_type'] ?? '') as String,
+        startDate: (m['start_date'] ?? '') as String,
+        endDate: (m['end_date'] ?? '') as String,
+        days: (m['days'] ?? 0) as num,
+        status: (m['status'] ?? '') as String,
+        employeeName: name,
+        isHalfDay: m['is_half_day'] == true,
+      );
+}
+
+class MilestoneItem {
+  const MilestoneItem({
+    required this.name,
+    required this.type, // birthday | anniversary
+    required this.date,
+    required this.daysUntil,
+    this.years,
+  });
+
+  final String name;
+  final String type;
+  final DateTime date;
+  final int daysUntil;
+  final int? years;
+}
+
+class CalendarItem {
+  const CalendarItem({
+    required this.title,
+    required this.description,
+    required this.eventDate,
+  });
+
+  final String title;
+  final String? description;
+  final String eventDate;
+
+  factory CalendarItem.fromMap(Map<String, dynamic> m) => CalendarItem(
+        title: (m['title'] ?? '') as String,
+        description: m['description'] as String?,
+        eventDate: (m['event_date'] ?? '') as String,
+      );
+}
+
+class HolidayItem {
+  const HolidayItem({
+    required this.name,
+    required this.date,
+    required this.daysUntil,
+  });
+
+  final String name;
+  final DateTime date;
+  final int daysUntil;
+}
+
+class PersonalReport {
+  const PersonalReport({
+    required this.monthlyHours,
+    required this.targetHours,
+    required this.annual,
+    required this.managerNames,
+    required this.teammateCount,
+  });
+
+  final double monthlyHours;
+  final double targetHours;
+  final LeaveBalanceItem? annual;
+  final List<String> managerNames;
+  final int teammateCount;
+
+  double get progress =>
+      targetHours <= 0 ? 0 : (monthlyHours / targetHours).clamp(0, 1).toDouble();
+}
+
+class TeamReport {
+  const TeamReport({
+    required this.teamSize,
+    required this.clockedInToday,
+    required this.pendingLeaves,
+    required this.totalTasks,
+    required this.doneTasks,
+  });
+
+  final int teamSize;
+  final int clockedInToday;
+  final int pendingLeaves;
+  final int totalTasks;
+  final int doneTasks;
+
+  int get taskCompletionPct =>
+      totalTasks == 0 ? 0 : ((doneTasks / totalTasks) * 100).round();
 }

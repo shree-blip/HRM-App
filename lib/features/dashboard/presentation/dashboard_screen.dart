@@ -8,8 +8,14 @@ import '../../../core/auth/auth_controller.dart';
 import '../data/dashboard_providers.dart';
 import '../data/dashboard_repository.dart';
 import 'widgets/announcements_card.dart';
+import 'widgets/daily_timeline_card.dart';
 import 'widgets/leave_balances_card.dart';
+import 'widgets/leave_requests_card.dart';
+import 'widgets/personal_report_card.dart';
+import 'widgets/placeholder_widget_card.dart';
 import 'widgets/stat_card.dart';
+import 'widgets/tasks_card.dart';
+import 'widgets/team_report_card.dart';
 
 /// Phase 2 dashboard. Mobile-first: greeting, 2x2 stat grid (real RLS-scoped
 /// data), announcements and leave balances. Stat cards deep-link into the
@@ -33,20 +39,14 @@ class DashboardScreen extends ConsumerWidget {
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(dashboardSummaryProvider);
-              ref.invalidate(announcementsProvider);
-              ref.invalidate(leaveBalancesProvider);
-            },
+            onPressed: () => _refresh(ref),
           ),
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/'),
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(dashboardSummaryProvider);
-          ref.invalidate(announcementsProvider);
-          ref.invalidate(leaveBalancesProvider);
+          _refresh(ref);
           await ref.read(dashboardSummaryProvider.future);
         },
         child: ListView(
@@ -58,6 +58,29 @@ class DashboardScreen extends ConsumerWidget {
               roleLabel: _roleLabel(auth.role?.name),
             ),
             const SizedBox(height: 16),
+
+            // Clock in/out — ships with Attendance (Phase 4).
+            const PlaceholderWidgetCard(
+              icon: Icons.access_time_filled,
+              title: 'Time Clock',
+              subtitle: 'Clock in / out, breaks & today’s hours',
+              phase: 4,
+              route: '/attendance',
+            ),
+            const SizedBox(height: 12),
+
+            // Live team attendance (managers) — Phase 4.
+            if (isManager) ...[
+              const PlaceholderWidgetCard(
+                icon: Icons.sensors,
+                title: 'Real-Time Attendance',
+                subtitle: 'Live team clock-in status',
+                phase: 4,
+                route: '/attendance',
+              ),
+              const SizedBox(height: 12),
+            ],
+
             summaryAsync.when(
               loading: () => const _StatGridSkeleton(),
               error: (e, _) => _ErrorTile(
@@ -72,14 +95,55 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            const AnnouncementsCard(),
+
+            // Reports summary: team (manager) or personal (employee).
+            if (isManager) const TeamReportCard() else const PersonalReportCard(),
+            const SizedBox(height: 16),
+
+            // Personal performance chart — Phase 4/7.
+            const PlaceholderWidgetCard(
+              icon: Icons.show_chart,
+              title: 'Performance Chart',
+              subtitle: 'Daily hours vs target trend',
+              phase: 7,
+              route: '/reports',
+            ),
+            const SizedBox(height: 16),
+
+            const DailyTimelineCard(),
+            const SizedBox(height: 16),
+            TasksCard(isManager: isManager),
+            const SizedBox(height: 16),
+            LeaveRequestsCard(isManager: isManager),
             const SizedBox(height: 16),
             const LeaveBalancesCard(),
+            const SizedBox(height: 16),
+            const AnnouncementsCard(),
+            const SizedBox(height: 16),
+
+            // Full month calendar — later phase.
+            const PlaceholderWidgetCard(
+              icon: Icons.calendar_month,
+              title: 'Company Calendar',
+              subtitle: 'Full calendar, holidays & events',
+              phase: 9,
+            ),
             const SizedBox(height: 24),
           ],
         ),
       ),
     );
+  }
+
+  void _refresh(WidgetRef ref) {
+    ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(announcementsProvider);
+    ref.invalidate(leaveBalancesProvider);
+    ref.invalidate(recentTasksProvider);
+    ref.invalidate(recentLeaveProvider);
+    ref.invalidate(dailyTimelineProvider);
+    ref.invalidate(personalReportProvider);
+    ref.invalidate(teamReportProvider);
   }
 
   static String _roleLabel(String? role) => switch (role) {
