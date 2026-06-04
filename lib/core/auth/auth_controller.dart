@@ -94,16 +94,18 @@ class AuthController extends Notifier<AppAuthState> {
       // Don't block login on RPC failure.
     }
 
-    // 2) Allowlist guard.
-    try {
-      final check = await _repo.verifySignupEmail(email);
-      final allowed = check.allowed || check.reason == 'already_used';
-      if (!allowed) {
-        await _rejectAndSignOut(AuthRejection.notAllowed);
-        return;
+    // 2) Allowlist guard — skip if already validated this app session.
+    if (!_allowlistValidated) {
+      try {
+        final check = await _repo.verifySignupEmail(email);
+        final allowed = check.allowed || check.reason == 'already_used';
+        if (!allowed) {
+          await _rejectAndSignOut(AuthRejection.notAllowed);
+          return;
+        }
+      } catch (_) {
+        // Network blip — don't sign out an otherwise valid session.
       }
-    } catch (_) {
-      // Network blip — don't sign out an otherwise valid session.
     }
 
     _allowlistValidated = true;

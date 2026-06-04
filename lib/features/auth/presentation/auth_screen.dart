@@ -190,7 +190,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
             'Your account has been deactivated. Please contact your Admin or Executive.',
           AuthRejection.notAllowed =>
             'Your email is not authorized to access this system.',
-        });
+        },);
         ref.read(authControllerProvider.notifier).clearRejection();
       },
     );
@@ -421,7 +421,10 @@ class _Header extends StatelessWidget {
           ),
           Text(
             'Human Resource Management',
-            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 13,
+            ),
           ),
         ],
       ),

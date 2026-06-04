@@ -11,7 +11,8 @@ import 'secure_local_storage.dart';
 Future<void> initSupabase() async {
   await Supabase.initialize(
     url: Env.supabaseUrl,
-    anonKey: Env.supabaseAnonKey,
+    // The publishable / anon key (NOT the service_role key).
+    publishableKey: Env.supabaseAnonKey,
     authOptions: FlutterAuthClientOptions(
       authFlowType: AuthFlowType.pkce,
       localStorage: SecureLocalStorage(),

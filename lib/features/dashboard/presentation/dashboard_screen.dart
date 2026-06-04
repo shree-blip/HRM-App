@@ -43,9 +43,11 @@ class DashboardScreen extends ConsumerWidget {
               leading: CircleAvatar(
                 child: Text(profile?.initials ?? '?'),
               ),
-              title: Text(profile?.fullName.isNotEmpty == true
-                  ? profile!.fullName
-                  : (profile?.email ?? 'User')),
+              title: Text(
+                profile?.fullName.isNotEmpty == true
+                    ? profile!.fullName
+                    : (profile?.email ?? 'User'),
+              ),
               subtitle: Text(profile?.email ?? ''),
             ),
           ),
@@ -56,8 +58,10 @@ class DashboardScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Session',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Session',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   _kv('Role', auth.role?.name ?? '—'),
                   _kv('Is manager', '${auth.isManager}'),
@@ -76,8 +80,10 @@ class DashboardScreen extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      const Text('Effective permissions',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Effective permissions',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       const Spacer(),
                       if (perms.loading)
                         const SizedBox(
