@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
 import '../core/auth/auth_state.dart';
+import '../core/navigation/nav_items.dart';
 import '../core/widgets/app_loader.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
+import '../features/common/coming_soon_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 
 /// Route paths used across the app.
@@ -70,6 +72,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.dashboard,
         builder: (_, __) => const DashboardScreen(),
       ),
+      // Placeholder routes for modules that ship in later phases. Keeps the
+      // drawer + dashboard links functional without dead-ends.
+      for (final entry in kPlaceholderRoutes.entries)
+        GoRoute(
+          path: entry.key,
+          builder: (_, __) => ComingSoonScreen(
+            title: entry.value.title,
+            route: entry.key,
+            phase: entry.value.phase,
+          ),
+        ),
     ],
   );
 });
