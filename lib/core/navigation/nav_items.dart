@@ -200,7 +200,6 @@ const List<NavItem> kNavItems = [
 const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
   // '/employees' (Phase 3), '/attendance' (Phase 4), '/leave' (Phase 5),
   // '/approvals' (Phase 6) are real screens.
-  '/reports': (title: 'Reports', phase: 7),
   '/payroll': (title: 'Payroll', phase: 8),
   '/documents': (title: 'Documents', phase: 9),
   '/support': (title: 'Support', phase: 9),
