@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/shell/app_drawer.dart';
-import '../../../core/auth/auth_controller.dart';
-import '../../../core/permissions/permission.dart';
-import '../../../core/permissions/permissions_controller.dart';
 import '../../attendance/data/attendance_providers.dart';
 import '../../leave/data/leave_providers.dart';
 import '../../leave/presentation/widgets/leave_approvals_view.dart';
@@ -13,47 +10,39 @@ import 'asset_approvals_view.dart';
 import 'attendance_approvals_view.dart';
 
 /// Unified Approvals page (Phase 6): Leave, Attendance adjustments, and Asset
-/// requests, with a pending summary. Tabs are permission/role gated.
+/// requests, with a pending summary. Matching the web app, all three tabs are
+/// always shown to anyone who reaches this page (the drawer/route gates who
+/// gets here); RLS scopes the data and per-action role checks gate approvals.
 class ApprovalsScreen extends ConsumerWidget {
   const ApprovalsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final perms = ref.watch(permissionsControllerProvider);
-    final isManager = ref.watch(authControllerProvider.select((s) => s.isManager));
-    final canApproveLeave = perms.has(Permission.approveLeave);
-
-    final tabs = <({String label, Widget view})>[
-      if (canApproveLeave) (label: 'Leave', view: const LeaveApprovalsView()),
-      if (isManager) (label: 'Attendance', view: const AttendanceApprovalsView()),
-      if (isManager) (label: 'Assets', view: const AssetApprovalsView()),
-    ];
-
-    if (tabs.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Approvals')),
-        drawer: const AppDrawer(currentRoute: '/approvals'),
-        body: const Center(child: Text('You have no approvals access.')),
-      );
-    }
-
     return DefaultTabController(
-      length: tabs.length,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Approvals'),
-          bottom: tabs.length > 1
-              ? TabBar(tabs: [for (final t in tabs) Tab(text: t.label)])
-              : null,
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Leave'),
+              Tab(text: 'Attendance'),
+              Tab(text: 'Assets'),
+            ],
+          ),
         ),
         drawer: const AppDrawer(currentRoute: '/approvals'),
-        body: Column(
+        body: const Column(
           children: [
-            const _PendingSummary(),
+            _PendingSummary(),
             Expanded(
-              child: tabs.length > 1
-                  ? TabBarView(children: [for (final t in tabs) t.view])
-                  : tabs.first.view,
+              child: TabBarView(
+                children: [
+                  LeaveApprovalsView(),
+                  AttendanceApprovalsView(),
+                  AssetApprovalsView(),
+                ],
+              ),
             ),
           ],
         ),

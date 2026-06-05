@@ -198,11 +198,13 @@ final myAdjustmentsProvider =
   return ref.read(attendanceRepositoryProvider).myAdjustmentRequests();
 });
 
-/// Team attendance adjustment requests for the approvals view (RLS-scoped).
+/// Team attendance adjustment requests for the approvals view. RLS scopes
+/// which requests are visible (managers/admins see their team's), so we don't
+/// pre-gate on the client role flags.
 final teamAdjustmentsProvider =
     FutureProvider.autoDispose<List<AdjustmentRequest>>((ref) async {
-  final auth = ref.watch(authControllerProvider);
-  if (auth.user == null || !auth.isManager) return const [];
+  final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
+  if (uid == null) return const [];
   return ref.read(attendanceRepositoryProvider).teamAdjustments();
 });
 
