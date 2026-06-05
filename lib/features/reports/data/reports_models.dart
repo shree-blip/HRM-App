@@ -91,6 +91,7 @@ class EmployeeSummary {
 /// One daily attendance record (employee-wise daily report).
 class DailyRecord {
   const DailyRecord({
+    required this.id,
     required this.userId,
     required this.name,
     required this.dateKey,
@@ -102,6 +103,7 @@ class DailyRecord {
     this.isEdited = false,
   });
 
+  final String id; // attendance_logs id (needed for edit)
   final String userId;
   final String name;
   final String dateKey; // YYYY-MM-DD (NPT)

@@ -6,9 +6,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../app/shell/app_drawer.dart';
+import '../../../core/auth/auth_controller.dart';
+import '../../../core/permissions/permission.dart';
+import '../../../core/permissions/permissions_controller.dart';
 import '../../../core/utils/attendance_time.dart';
 import '../data/reports_models.dart';
 import '../data/reports_providers.dart';
+import 'edit_attendance_screen.dart';
 
 /// Reports & Attendance Summary (Phase 7). Tabs: Summary (per-employee) and
 /// Daily (employee-wise records). Date-range + employee filters + CSV export.
@@ -319,6 +323,9 @@ class _DailyTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final emp = ref.watch(reportEmployeeProvider);
+    final perms = ref.watch(permissionsControllerProvider);
+    final isVp = ref.watch(authControllerProvider.select((s) => s.isVp));
+    final canEdit = isVp || perms.has(Permission.editAttendance);
     final rows = emp == 'all'
         ? data.daily
         : data.daily.where((r) => r.userId == emp).toList();
@@ -343,6 +350,16 @@ class _DailyTab extends ConsumerWidget {
                           style: const TextStyle(fontWeight: FontWeight.w600),),
                     ),
                     _StatusChip(status: r.status),
+                    if (canEdit)
+                      IconButton(
+                        tooltip: 'Edit attendance',
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => EditAttendanceScreen(record: r),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 4),

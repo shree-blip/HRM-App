@@ -11,7 +11,7 @@ class ReportsRepository {
     final logRows = await supabase
         .from('attendance_logs')
         .select(
-          'user_id, clock_in, clock_out, total_break_minutes, '
+          'id, user_id, clock_in, clock_out, total_break_minutes, '
           'total_pause_minutes, is_edited',
         )
         .gte('clock_in', w.startUtc.toIso8601String())
@@ -77,6 +77,7 @@ class ReportsRepository {
       final info = names[uid] ?? (name: 'Employee', email: '');
 
       daily.add(DailyRecord(
+        id: l['id'] as String,
         userId: uid,
         name: info.name,
         dateKey: dateKey,
@@ -195,6 +196,121 @@ class ReportsRepository {
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   static DateTime _maxDate(DateTime a, DateTime b) => a.isAfter(b) ? a : b;
   static DateTime _minDate(DateTime a, DateTime b) => a.isBefore(b) ? a : b;
+
+  // ── Edit Attendance (direct edit, VP / edit_attendance) ─
+  /// Existing break/pause sessions for a log, for the edit dialog.
+  Future<List<({String dbId, String type, DateTime start, DateTime? end})>>
+      sessions(String logId) async {
+    final rows = await supabase
+        .from('attendance_break_sessions')
+        .select('id, session_type, start_time, end_time')
+        .eq('attendance_log_id', logId)
+        .order('start_time', ascending: true);
+    return (rows as List).map((r) {
+      final m = r as Map;
+      return (
+        dbId: m['id'] as String,
+        type: (m['session_type'] ?? 'break') as String,
+        start: DateTime.parse(m['start_time'] as String).toUtc(),
+        end: m['end_time'] != null
+            ? DateTime.parse(m['end_time'] as String).toUtc()
+            : null,
+      );
+    }).toList();
+  }
+
+  /// Direct edit via the apply_attendance_edit RPC + audit log + notifications,
+  /// exactly like the web EditAttendanceDialog.
+  Future<void> applyEdit({
+    required String logId,
+    required String clockInIso,
+    String? clockOutIso,
+    String? breakStartIso,
+    String? breakEndIso,
+    required int totalBreak,
+    String? pauseStartIso,
+    String? pauseEndIso,
+    required int totalPause,
+    required List<String> sessionsToDelete,
+    required List<Map<String, dynamic>> sessionsToUpdate,
+    required List<Map<String, dynamic>> sessionsToInsert,
+    required Map<String, dynamic> oldValues,
+    required Map<String, dynamic> newValues,
+    required String reason,
+    required String employeeName,
+  }) async {
+    await supabase.rpc('apply_attendance_edit', params: {
+      '_attendance_log_id': logId,
+      '_clock_in': clockInIso,
+      '_clock_out': clockOutIso,
+      '_break_start': breakStartIso,
+      '_break_end': breakEndIso,
+      '_total_break_minutes': totalBreak,
+      '_pause_start': pauseStartIso,
+      '_pause_end': pauseEndIso,
+      '_total_pause_minutes': totalPause,
+      '_sessions_to_delete': sessionsToDelete,
+      '_sessions_to_update': sessionsToUpdate,
+      '_sessions_to_insert': sessionsToInsert,
+    },);
+    await supabase.from('attendance_edit_logs').insert({
+      'attendance_id': logId,
+      'edited_by': supabase.auth.currentUser!.id,
+      'old_values': oldValues,
+      'new_values': newValues,
+      'reason': reason,
+    });
+    await _notifyVps('⚠️ Attendance Edited',
+        'Attendance for $employeeName was edited. Reason: $reason',);
+    try {
+      await supabase.functions.invoke('send-attendance-edit-notification', body: {
+        'employee_name': employeeName,
+        'reason': reason,
+        'change_summary': 'Edited via mobile',
+      },);
+    } catch (_) {}
+  }
+
+  Future<void> deleteRecord({
+    required String logId,
+    required Map<String, dynamic> oldValues,
+    required String reason,
+    required String employeeName,
+  }) async {
+    await supabase.from('attendance_edit_logs').insert({
+      'attendance_id': logId,
+      'edited_by': supabase.auth.currentUser!.id,
+      'old_values': oldValues,
+      'new_values': {'action': 'deleted'},
+      'reason': '[DELETED] $reason',
+    });
+    await supabase
+        .from('attendance_break_sessions')
+        .delete()
+        .eq('attendance_log_id', logId);
+    await supabase.from('attendance_logs').delete().eq('id', logId);
+    await _notifyVps('🗑️ Attendance Deleted',
+        'Attendance for $employeeName was deleted. Reason: $reason',);
+  }
+
+  Future<void> _notifyVps(String title, String message) async {
+    try {
+      final uid = supabase.auth.currentUser?.id;
+      final rows =
+          await supabase.from('user_roles').select('user_id').eq('role', 'vp');
+      for (final r in rows as List) {
+        final v = (r as Map)['user_id'] as String?;
+        if (v == null || v == uid) continue;
+        await supabase.rpc('create_notification', params: {
+          'p_user_id': v,
+          'p_title': title,
+          'p_message': message,
+          'p_type': 'warning',
+          'p_link': '/reports',
+        },);
+      }
+    } catch (_) {}
+  }
 
   // ── CSV builders ───────────────────────────────────────
   String summaryCsv(ReportData data) {
