@@ -198,10 +198,9 @@ const List<NavItem> kNavItems = [
 /// Routes that the dashboard's stat cards / drawer may navigate to but which
 /// are not yet implemented — used to title the placeholder screen.
 const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
-  '/attendance': (title: 'Attendance', phase: 4),
   '/leave': (title: 'Leave', phase: 5),
   '/approvals': (title: 'Approvals', phase: 6),
-  // '/employees' is a real screen as of Phase 3 — see router.dart.
+  // '/employees' (Phase 3) and '/attendance' (Phase 4) are real screens.
   '/reports': (title: 'Reports', phase: 7),
   '/payroll': (title: 'Payroll', phase: 8),
   '/documents': (title: 'Documents', phase: 9),

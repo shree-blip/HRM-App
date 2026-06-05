@@ -8,6 +8,7 @@ import '../core/navigation/nav_items.dart';
 import '../core/widgets/app_loader.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
+import '../features/attendance/presentation/attendance_screen.dart';
 import '../features/common/coming_soon_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/employees/data/employee.dart';
@@ -88,6 +89,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ],
+      ),
+      // Attendance (Phase 4).
+      GoRoute(
+        path: '/attendance',
+        builder: (_, __) => const AttendanceScreen(),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.
