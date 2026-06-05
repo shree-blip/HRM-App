@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../data/attendance_providers.dart';
+import 'attendance_export.dart';
 import 'widgets/attendance_history_list.dart';
+import 'widgets/my_adjustments_list.dart';
 import 'widgets/team_attendance_view.dart';
 import 'widgets/time_clock_card.dart';
 
@@ -23,6 +25,20 @@ class AttendanceScreen extends ConsumerWidget {
         appBar: AppBar(
           title: const Text('Attendance'),
           actions: [
+            PopupMenuButton<String>(
+              tooltip: 'Export CSV',
+              icon: const Icon(Icons.file_download_outlined),
+              onSelected: (v) => exportAttendanceCsv(context, ref, v),
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  enabled: false,
+                  child: Text('Export CSV',
+                      style: TextStyle(fontWeight: FontWeight.bold),),
+                ),
+                for (final t in kExportTimeframes)
+                  PopupMenuItem(value: t.value, child: Text(t.label)),
+              ],
+            ),
             IconButton(
               tooltip: 'Refresh',
               icon: const Icon(Icons.refresh),
@@ -56,6 +72,7 @@ class _MyTab extends ConsumerWidget {
       onRefresh: () async {
         ref.invalidate(attendanceStatsProvider);
         ref.invalidate(attendanceHistoryProvider);
+        ref.invalidate(myAdjustmentsProvider);
         await ref.read(attendanceHistoryProvider.future);
       },
       child: ListView(
@@ -71,6 +88,7 @@ class _MyTab extends ConsumerWidget {
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
           const SizedBox(height: 8),
           const AttendanceHistoryList(),
+          const MyAdjustmentsList(),
           const SizedBox(height: 24),
         ],
       ),

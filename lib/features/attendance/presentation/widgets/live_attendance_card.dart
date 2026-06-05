@@ -1,13 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/utils/attendance_time.dart';
 import '../../data/attendance_providers.dart';
 import '../../data/live_attendance.dart';
+import '../attendance_export.dart';
 import '../full_activity_screen.dart';
 import 'live_status_style.dart';
 
@@ -24,7 +21,6 @@ class LiveAttendanceCard extends ConsumerStatefulWidget {
 
 class _LiveAttendanceCardState extends ConsumerState<LiveAttendanceCard> {
   String? _filter; // working | break | paused | out | all | wfo | wfh
-  bool _exporting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -72,9 +68,13 @@ class _LiveAttendanceCardState extends ConsumerState<LiveAttendanceCard> {
       children: [
         Icon(Icons.bolt, color: theme.colorScheme.primary),
         const SizedBox(width: 8),
-        Text('Live Attendance',
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold),),
+        Flexible(
+          child: Text('Live Attendance',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),),
+        ),
         const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -96,23 +96,9 @@ class _LiveAttendanceCardState extends ConsumerState<LiveAttendanceCard> {
           ),
         ),
         const Spacer(),
-        if (_exporting)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: SizedBox(
-                height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2),),
-          )
-        else
-          PopupMenuButton<String>(
-            tooltip: 'Export CSV',
-            icon: const Icon(Icons.download_outlined, size: 20),
-            onSelected: _export,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'today', child: Text("Today's data")),
-              PopupMenuItem(value: 'week', child: Text("This week's data")),
-              PopupMenuItem(value: 'month', child: Text("This month's data")),
-            ],
-          ),
+        _ExportButton(
+          onSelected: (v) => exportAttendanceCsv(context, ref, v),
+        ),
         IconButton(
           icon: const Icon(Icons.refresh, size: 20),
           tooltip: 'Refresh',
@@ -440,25 +426,43 @@ class _LiveAttendanceCardState extends ConsumerState<LiveAttendanceCard> {
     return '$f$l'.toUpperCase();
   }
 
-  Future<void> _export(String timeframe) async {
-    setState(() => _exporting = true);
-    try {
-      final csv = await ref
-          .read(liveAttendanceRepositoryProvider)
-          .attendanceCsv(timeframe);
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/attendance_$timeframe.csv');
-      await file.writeAsString(csv);
-      await Share.shareXFiles([XFile(file.path)],
-          subject: 'Attendance ($timeframe)',);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(content: Text('Export failed: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
+}
+
+/// Clearly-visible "Export CSV ▾" chip used in the Live Attendance header.
+class _ExportButton extends StatelessWidget {
+  const _ExportButton({required this.onSelected});
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return PopupMenuButton<String>(
+      tooltip: 'Export CSV',
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final t in kExportTimeframes)
+          PopupMenuItem(value: t.value, child: Text(t.label)),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.primary),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download_outlined, size: 16, color: theme.colorScheme.primary),
+            const SizedBox(width: 4),
+            Text('Export',
+                style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,),),
+            Icon(Icons.arrow_drop_down, size: 18, color: theme.colorScheme.primary),
+          ],
+        ),
+      ),
+    );
   }
 }

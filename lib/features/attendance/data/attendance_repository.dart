@@ -1,5 +1,6 @@
 import '../../../core/supabase/supabase_client.dart';
 import '../../../core/utils/attendance_time.dart';
+import 'adjustment_models.dart';
 import 'attendance_models.dart';
 
 /// Read + clock-action data access for attendance. Clocking goes through the
@@ -188,5 +189,103 @@ class AttendanceRepository {
       paused: paused,
       out: out,
     );
+  }
+
+  // ── Adjustment requests (employee self-correction) ─────
+  Future<void> submitAdjustment({
+    required String logId,
+    DateTime? originalClockIn,
+    DateTime? originalClockOut,
+    int? originalBreakMinutes,
+    int? originalPauseMinutes,
+    required DateTime proposedClockIn,
+    required DateTime proposedClockOut,
+    required int proposedBreakMinutes,
+    required int proposedPauseMinutes,
+    required String reason,
+  }) async {
+    final uid = supabase.auth.currentUser!.id;
+    await supabase.from('attendance_adjustment_requests').insert({
+      'attendance_log_id': logId,
+      'requested_by': uid,
+      'proposed_clock_in': proposedClockIn.toUtc().toIso8601String(),
+      'proposed_clock_out': proposedClockOut.toUtc().toIso8601String(),
+      'proposed_break_minutes': proposedBreakMinutes,
+      'proposed_pause_minutes': proposedPauseMinutes,
+      'reason': reason,
+      'status': 'pending',
+      if (originalClockIn != null)
+        'original_clock_in': originalClockIn.toUtc().toIso8601String(),
+      if (originalClockOut != null)
+        'original_clock_out': originalClockOut.toUtc().toIso8601String(),
+      if (originalBreakMinutes != null)
+        'original_break_minutes': originalBreakMinutes,
+      if (originalPauseMinutes != null)
+        'original_pause_minutes': originalPauseMinutes,
+    });
+    await _notifyManagers(uid);
+  }
+
+  Future<void> _notifyManagers(String uid) async {
+    try {
+      final empId =
+          await supabase.rpc('get_employee_id_for_user', params: {'_user_id': uid});
+      if (empId is! String) return;
+      final tm = await supabase
+          .from('team_members')
+          .select('manager_employee_id')
+          .eq('member_employee_id', empId);
+      final mgrEmpIds = (tm as List)
+          .map((r) => (r as Map)['manager_employee_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      if (mgrEmpIds.isEmpty) return;
+      final emps = await supabase
+          .from('employees')
+          .select('profile_id')
+          .inFilter('id', mgrEmpIds);
+      final profileIds = (emps as List)
+          .map((r) => (r as Map)['profile_id'] as String?)
+          .whereType<String>()
+          .toList();
+      if (profileIds.isEmpty) return;
+      final profs = await supabase
+          .from('profiles')
+          .select('user_id')
+          .inFilter('id', profileIds);
+      final userIds = (profs as List)
+          .map((r) => (r as Map)['user_id'] as String?)
+          .whereType<String>()
+          .toSet();
+      for (final mUid in userIds) {
+        await supabase.rpc('create_notification', params: {
+          'p_user_id': mUid,
+          'p_title': '🕒 Attendance Adjustment Request',
+          'p_message': 'A team member requested an attendance correction.',
+          'p_type': 'attendance',
+          'p_link': '/approvals',
+        },);
+      }
+    } catch (_) {
+      // Best-effort; never block the request on notification failure.
+    }
+  }
+
+  Future<List<AdjustmentRequest>> myAdjustmentRequests() async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return [];
+    final rows = await supabase
+        .from('attendance_adjustment_requests')
+        .select(
+          'id, attendance_log_id, status, reason, proposed_clock_in, '
+          'proposed_clock_out, proposed_break_minutes, proposed_pause_minutes, '
+          'reviewer_comment, override_status, created_at',
+        )
+        .eq('requested_by', uid)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => AdjustmentRequest.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
   }
 }

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/supabase/supabase_client.dart';
+import 'adjustment_models.dart';
 import 'attendance_models.dart';
 import 'attendance_repository.dart';
 import 'live_attendance.dart';
@@ -188,6 +189,14 @@ final liveAttendanceProvider =
     AsyncNotifierProvider<LiveAttendanceController, LiveData>(
   LiveAttendanceController.new,
 );
+
+/// The current user's attendance adjustment requests (newest first).
+final myAdjustmentsProvider =
+    FutureProvider.autoDispose<List<AdjustmentRequest>>((ref) async {
+  final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
+  if (uid == null) return const [];
+  return ref.read(attendanceRepositoryProvider).myAdjustmentRequests();
+});
 
 /// Month-range activity events for the full-activity timeline (Week/Month).
 final fullActivityProvider =

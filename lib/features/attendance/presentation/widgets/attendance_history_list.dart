@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/utils/attendance_time.dart';
 import '../../data/attendance_models.dart';
 import '../../data/attendance_providers.dart';
+import '../adjustment_request_dialog.dart';
 
 /// "My Attendance History" — this month's logs, newest first, with an
 /// expandable break/pause breakdown per day.
@@ -114,6 +115,22 @@ class _HistoryTile extends ConsumerWidget {
             ),
           const SizedBox(height: 8),
           _SessionList(logId: log.id),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.edit_note, size: 18),
+              label: const Text('Request adjustment'),
+              onPressed: () async {
+                final ok = await showAdjustmentRequestDialog(context, ref, log);
+                if (ok == true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Adjustment request submitted.')),
+                  );
+                }
+              },
+            ),
+          ),
         ],
       ),
     );
