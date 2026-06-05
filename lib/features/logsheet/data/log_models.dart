@@ -20,6 +20,7 @@ class WorkLog {
     this.pauseStart,
     this.totalPauseMinutes = 0,
     this.employeeName,
+    this.employeeDept,
     this.createdAt,
   });
 
@@ -40,6 +41,7 @@ class WorkLog {
   final DateTime? pauseStart;
   final int totalPauseMinutes;
   final String? employeeName; // from employee join (team views)
+  final String? employeeDept; // employee profile department (report table)
   final DateTime? createdAt;
 
   bool get isActive => status == 'in_progress';
@@ -78,11 +80,40 @@ class WorkLog {
       employeeName: emp != null
           ? '${emp['first_name'] ?? ''} ${emp['last_name'] ?? ''}'.trim()
           : null,
+      employeeDept: emp?['department'] as String?,
       createdAt: m['created_at'] != null
           ? DateTime.tryParse(m['created_at'] as String)?.toUtc()
           : null,
     );
   }
+}
+
+/// Employee row for the report Employee filter.
+class LogEmployee {
+  const LogEmployee({
+    required this.id,
+    required this.name,
+    this.employeeId,
+    this.department,
+    this.email,
+  });
+  final String id;
+  final String name;
+  final String? employeeId;
+  final String? department;
+  final String? email;
+
+  String get display => employeeId != null && employeeId!.isNotEmpty
+      ? '$name ($employeeId)'
+      : name;
+
+  factory LogEmployee.fromMap(Map<String, dynamic> m) => LogEmployee(
+        id: m['id'] as String,
+        name: '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
+        employeeId: m['employee_id'] as String?,
+        department: m['department'] as String?,
+        email: m['email'] as String?,
+      );
 }
 
 class Client {
@@ -129,35 +160,58 @@ int? _parseHm(String? hm) {
   return h * 60 + m;
 }
 
-/// Department groups (mirrors the hardcoded nesting in the web LogSheet).
-const kDepartmentGroups = <String, List<String>>{
-  'Tax': [
-    'Tax', 'Tax Preparation', 'Tax Return Review', 'Tax Return Walk Through',
-    'Tax Return Compliance', 'TR Closure', 'TR Invoicing', 'Final Review',
-    'Tax Filing',
-  ],
-  'Payroll': [
-    'Payroll', 'Payroll Preparation', 'Payroll Notice Resolution',
-    'Payroll Documentation',
-  ],
-  'Accounting': [
-    'Accounting', 'Daily Bookkeeping', 'Book Closing', 'Book Review',
-    'Book Discussion with Client', 'Sales Tax Preparation & Filing',
-    'Sales Tax Notice Resolution', 'Ad Hoc Request', 'Client Communication',
-    'Reporting',
-  ],
-  'Marketing': [],
-  'Sales': [],
-  'Finance': [],
-  'Operations': [],
-  'Design': [],
-  'Engineering': [],
-  'Human Resources': [],
-  'Customer Support': [],
-  'Legal': [],
-  'Product': [],
-  'Other': [],
-};
+/// A department node (parent group with optional children), mirroring the web
+/// `DEPARTMENTS` array EXACTLY (label + DB value codes must match so filtering
+/// and labels work against existing work_logs.department data).
+class DeptNode {
+  const DeptNode(this.label, this.value, [this.children = const []]);
+  final String label;
+  final String value;
+  final List<DeptNode> children;
+}
+
+const kDepartmentTree = <DeptNode>[
+  DeptNode('Tax', 'Tax', [
+    DeptNode('Tax', 'Tax'),
+    DeptNode('Tax Preparation', 'Tax_Preparation'),
+    DeptNode('Tax Return Review', 'Tax_Return_Review'),
+    DeptNode('Tax Return Walk Through', 'Tax_Return_Walk_Through'),
+    DeptNode('Tax Return Compliance', 'Tax_Return_Compliance'),
+    DeptNode('TR Closure', 'TR_Closure'),
+    DeptNode('TR Invoicing', 'TR_Invoicing'),
+    DeptNode('Final Review', 'Final_Review'),
+    DeptNode('Tax Filing', 'Tax_Filing'),
+  ]),
+  DeptNode('Payroll', 'Payroll', [
+    DeptNode('Payroll', 'Payroll_'),
+    DeptNode('Payroll Preparation', 'Payroll_Preparation'),
+    DeptNode('Payroll Notice Resolution', 'Payroll_Notice_Resolution'),
+    DeptNode('Payroll Documentation', 'Payroll_Documentation'),
+  ]),
+  DeptNode('Accounting', 'Accounting', [
+    DeptNode('Accounting', 'Accounting'),
+    DeptNode('Daily Bookkeeping', 'Daily_Bookkeeping'),
+    DeptNode('Book Closing', 'Month_End_Closing'),
+    DeptNode('Book Review', 'Book_Review'),
+    DeptNode('Book Discussion with Client', 'Book_Discussion_with_Client'),
+    DeptNode('Sales Tax Preparation & Filing', 'Sales_Tax_Preparation_Filing'),
+    DeptNode('Sales Tax Notice Resolution', 'Sales_Tax_Notice_Resolution'),
+    DeptNode('Ad Hoc Request', 'Ad_hoc_requests'),
+    DeptNode('Client Communication', 'Client_communications'),
+    DeptNode('Reporting', 'Reporting'),
+  ]),
+  DeptNode('Marketing', 'Marketing'),
+  DeptNode('Sales', 'Sales'),
+  DeptNode('Human Resources', 'Human Resources'),
+  DeptNode('Finance', 'Finance'),
+  DeptNode('Operations', 'Operations'),
+  DeptNode('Design', 'Design'),
+  DeptNode('Customer Support', 'Customer Support'),
+  DeptNode('Legal', 'Legal'),
+  DeptNode('Engineering', 'Engineering'),
+  DeptNode('Product', 'Product'),
+  DeptNode('Other', 'Other'),
+];
 
 class DeptOption {
   const DeptOption(this.value, this.label);
@@ -165,22 +219,32 @@ class DeptOption {
   final String label;
 }
 
+/// Flat selectable options (the leaf/standalone values), with display labels
+/// "Parent → Child" — matches the values React actually selects/stores.
 final List<DeptOption> kDepartmentOptions = [
-  for (final entry in kDepartmentGroups.entries)
-    if (entry.value.isEmpty)
-      DeptOption(entry.key, entry.key)
+  for (final group in kDepartmentTree)
+    if (group.children.isEmpty)
+      DeptOption(group.value, group.label)
     else
-      for (final child in entry.value)
+      for (final child in group.children)
         DeptOption(
-          child.replaceAll(' ', '_'),
-          child == entry.key ? child : '${entry.key} → $child',
+          child.value,
+          child.label == group.label ? child.label : '${group.label} → ${child.label}',
         ),
 ];
 
+/// Display label for a stored department value (web getDepartmentDisplayLabel).
+String? getDepartmentDisplayLabel(String value) {
+  for (final dept in kDepartmentTree) {
+    if (dept.value == value) return dept.label;
+    for (final child in dept.children) {
+      if (child.value == value) return '${dept.label} → ${child.label}';
+    }
+  }
+  return null;
+}
+
 String departmentLabel(String? value) {
   if (value == null || value.isEmpty) return '—';
-  for (final o in kDepartmentOptions) {
-    if (o.value == value) return o.label;
-  }
-  return value.replaceAll('_', ' ');
+  return getDepartmentDisplayLabel(value) ?? value.replaceAll('_', ' ');
 }

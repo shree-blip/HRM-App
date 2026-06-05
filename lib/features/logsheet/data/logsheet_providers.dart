@@ -70,16 +70,35 @@ class ReportFilter {
   static const _u = Object();
 }
 
-final logReportFilterProvider = StateProvider<ReportFilter>((_) {
-  final today = _todayKey();
-  final firstOfMonth = '${today.substring(0, 8)}01';
-  return ReportFilter(start: firstOfMonth, end: today);
-});
+String _firstOfMonth() {
+  final n = DateTime.now();
+  return '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-01';
+}
+
+String _endOfMonth() {
+  final n = DateTime.now();
+  final last = DateTime(n.year, n.month + 1, 0).day;
+  return '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-${last.toString().padLeft(2, '0')}';
+}
+
+/// The draft filter being edited in the Report tab.
+final logReportDraftProvider = StateProvider<ReportFilter>(
+  (_) => ReportFilter(start: _firstOfMonth(), end: _endOfMonth()),
+);
+
+/// The filter actually applied (set when "Generate Report" is pressed).
+/// Null until the user generates → drives the "not searched yet" state.
+final appliedReportProvider = StateProvider<ReportFilter?>((_) => null);
+
+/// Employees for the report Employee filter.
+final reportEmployeesProvider = FutureProvider.autoDispose<List<LogEmployee>>(
+  (ref) => ref.read(logSheetRepositoryProvider).employees(),
+);
 
 final logReportProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) {
-  final f = ref.watch(logReportFilterProvider);
+  final f = ref.watch(appliedReportProvider);
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
-  if (uid == null) return Future.value(const []);
+  if (uid == null || f == null) return Future.value(const []);
   return ref.read(logSheetRepositoryProvider).reportLogs(
         start: f.start,
         end: f.end,

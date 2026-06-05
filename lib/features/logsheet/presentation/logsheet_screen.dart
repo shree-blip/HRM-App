@@ -325,113 +325,530 @@ class _TeamLogsViewState extends ConsumerState<_TeamLogsView> {
 }
 
 // ── Report ──────────────────────────────────────────────
+// A time-by-X breakdown row.
+class _Breakdown {
+  _Breakdown(this.label, {this.sub}) : minutes = 0;
+  final String label;
+  final String? sub;
+  int minutes;
+}
+
+({List<_Breakdown> clients, List<_Breakdown> employees, List<_Breakdown> depts})
+    _summaries(List<WorkLog> logs) {
+  final clients = <String, _Breakdown>{};
+  final employees = <String, _Breakdown>{};
+  final depts = <String, _Breakdown>{};
+  for (final l in logs) {
+    final cName = l.clientName ?? 'No Client';
+    (clients[cName] ??= _Breakdown(cName, sub: l.clientCode)).minutes += l.timeSpentMinutes;
+    final eName = l.employeeName ?? 'Unassigned';
+    final eDept = departmentLabel(l.department ?? l.employeeDept);
+    (employees[eName] ??= _Breakdown(eName, sub: eDept)).minutes += l.timeSpentMinutes;
+    final dRaw = l.department ?? 'No Department';
+    (depts[dRaw] ??= _Breakdown(departmentLabel(l.department))).minutes += l.timeSpentMinutes;
+  }
+  List<_Breakdown> sorted(Map<String, _Breakdown> m) =>
+      m.values.toList()..sort((a, b) => b.minutes.compareTo(a.minutes));
+  return (clients: sorted(clients), employees: sorted(employees), depts: sorted(depts));
+}
+
 class _ReportView extends ConsumerWidget {
   const _ReportView();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(logReportFilterProvider);
+    final theme = Theme.of(context);
+    final draft = ref.watch(logReportDraftProvider);
+    final applied = ref.watch(appliedReportProvider);
     final async = ref.watch(logReportProvider);
-    final ctrl = ref.read(logReportFilterProvider.notifier);
+    final clients = ref.watch(clientsProvider).valueOrNull ?? const [];
+    final employees = ref.watch(reportEmployeesProvider).valueOrNull ?? const [];
+    final ctrl = ref.read(logReportDraftProvider.notifier);
 
-    return Column(
+    final clientName = draft.clientId == null
+        ? 'All clients'
+        : clients.firstWhere((c) => c.id == draft.clientId,
+            orElse: () => const Client(id: '', name: '—'),).display;
+    final empName = draft.employeeId == null
+        ? 'All employees'
+        : employees.firstWhere((e) => e.id == draft.employeeId,
+            orElse: () => const LogEmployee(id: '', name: '—'),).display;
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: Row(
-            children: [
-              Expanded(child: OutlinedButton.icon(
-                icon: const Icon(Icons.date_range, size: 16),
-                label: Text('${filter.start} → ${filter.end}', style: const TextStyle(fontSize: 12)),
-                onPressed: () async {
-                  final picked = await showDateRangePicker(
-                    context: context,
-                    firstDate: DateTime(DateTime.now().year - 2),
-                    lastDate: DateTime(DateTime.now().year + 1),
-                    initialDateRange: DateTimeRange(start: DateTime.parse(filter.start), end: DateTime.parse(filter.end)),
-                  );
-                  if (picked != null) {
-                    String f(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                    ctrl.state = filter.copyWith(start: f(picked.start), end: f(picked.end));
-                  }
-                },
-              ),),
-              IconButton(
-                tooltip: 'Export CSV',
-                icon: const Icon(Icons.file_download_outlined),
-                onPressed: () => _exportReport(context, ref),
-              ),
-            ],
-          ),
+        // ── Filters ──
+        _FilterTile(
+          icon: Icons.business,
+          label: 'Client',
+          value: clientName,
+          onClear: draft.clientId == null ? null : () => ctrl.state = draft.copyWith(clientId: null),
+          onTap: () async {
+            final v = await _pick(context, 'Select client', [
+              (value: null, label: 'All clients', sub: null),
+              for (final c in clients) (value: c.id, label: c.name, sub: c.code),
+            ], draft.clientId,);
+            ctrl.state = draft.copyWith(clientId: v);
+          },
         ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: () async {
-              ref.invalidate(logReportProvider);
-              await ref.read(logReportProvider.future);
-            },
-            child: async.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => ListView(children: [Padding(padding: const EdgeInsets.all(24), child: Text('Could not load.\n$e'))]),
-              data: (logs) {
-                final totalMin = logs.fold<int>(0, (a, l) => a + l.timeSpentMinutes);
-                return ListView(
-                  padding: const EdgeInsets.all(12),
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _stat(context, '${logs.length}', 'Entries'),
-                            _stat(context, formatMinutes(totalMin), 'Total time'),
-                          ],
-                        ),
+        _FilterTile(
+          icon: Icons.person_outline,
+          label: 'Employee',
+          value: empName,
+          onClear: draft.employeeId == null ? null : () => ctrl.state = draft.copyWith(employeeId: null),
+          onTap: () async {
+            final v = await _pick(context, 'Select employee', [
+              (value: null, label: 'All employees', sub: null),
+              for (final e in employees) (value: e.id, label: e.name, sub: e.employeeId ?? e.email),
+            ], draft.employeeId,);
+            ctrl.state = draft.copyWith(employeeId: v);
+          },
+        ),
+        _FilterTile(
+          icon: Icons.category_outlined,
+          label: 'Task Department',
+          value: draft.department == null ? 'All task departments' : departmentLabel(draft.department),
+          onClear: draft.department == null ? null : () => ctrl.state = draft.copyWith(department: null),
+          onTap: () async {
+            final v = await _pick(context, 'Select task department', [
+              (value: null, label: 'All task departments', sub: null),
+              for (final o in kDepartmentOptions) (value: o.value, label: o.label, sub: null),
+            ], draft.department,);
+            ctrl.state = draft.copyWith(department: v);
+          },
+        ),
+        _FilterTile(
+          icon: Icons.date_range,
+          label: 'Date range',
+          value: '${draft.start} → ${draft.end}',
+          onTap: () async {
+            final picked = await showDateRangePicker(
+              context: context,
+              firstDate: DateTime(DateTime.now().year - 2),
+              lastDate: DateTime(DateTime.now().year + 1),
+              initialDateRange: DateTimeRange(start: DateTime.parse(draft.start), end: DateTime.parse(draft.end)),
+            );
+            if (picked != null) {
+              String f(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+              ctrl.state = draft.copyWith(start: f(picked.start), end: f(picked.end));
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          icon: const Icon(Icons.assessment_outlined, size: 18),
+          label: const Text('Generate Report'),
+          onPressed: () => ref.read(appliedReportProvider.notifier).state = draft,
+        ),
+        const Divider(height: 24),
+
+        // ── Results ──
+        if (applied == null)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text('Set filters and tap Generate Report.')),
+          )
+        else
+          async.when(
+            loading: () => const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Could not load.\n$e')),
+            data: (logs) {
+              if (logs.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(child: Text('No logs found for the selected filters in the date range.')),
+                );
+              }
+              final totalMin = logs.fold<int>(0, (a, l) => a + l.timeSpentMinutes);
+              final s = _summaries(logs);
+              final typeLabel = _reportTypeLabel(applied);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Summary bar
+                  Card(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Chip(
+                                label: Text('$typeLabel Report'),
+                                backgroundColor: applied.clientId == null && applied.employeeId == null && applied.department == null
+                                    ? theme.colorScheme.primaryContainer
+                                    : null,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              const Spacer(),
+                              TextButton.icon(
+                                icon: const Icon(Icons.download, size: 16),
+                                label: const Text('CSV'),
+                                onPressed: () => _exportReport(context, ref, applied, logs, s,
+                                    clients, employees,),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 20,
+                            runSpacing: 10,
+                            children: [
+                              if (applied.clientId == null) _stat(context, '${s.clients.length}', 'Total Clients'),
+                              if (applied.employeeId == null) _stat(context, '${s.employees.length}', 'Total Employees'),
+                              _stat(context, '${logs.length}', 'Total Entries'),
+                              _stat(context, formatMinutes(totalMin), 'Total Time'),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (logs.isEmpty)
-                      const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No logs in this range.')))
-                    else
-                      for (final l in logs) _LogCard(log: l, showEmployee: true, showDate: true),
-                  ],
-                );
-              },
-            ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (applied.clientId == null)
+                    _breakdownSection(context, Icons.business, 'Time by Client', s.clients),
+                  if (applied.employeeId == null)
+                    _breakdownSection(context, Icons.person_outline, 'Time by Employee', s.employees),
+                  if (applied.department == null)
+                    _breakdownSection(context, Icons.apartment, 'Time by Department', s.depts),
+                  const SizedBox(height: 6),
+                  Text('Detailed entries',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),),
+                  const SizedBox(height: 6),
+                  for (final l in logs.take(15)) _LogCard(log: l, showEmployee: true, showDate: true),
+                  if (logs.length > 15)
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Center(
+                        child: Text('Showing 15 of ${logs.length} entries. Download CSV for the full report.',
+                            style: theme.textTheme.bodySmall,),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-        ),
       ],
     );
   }
 
   Widget _stat(BuildContext context, String v, String l) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(v, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           Text(l, style: Theme.of(context).textTheme.bodySmall),
+          Text(v, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
         ],
       );
 
-  Future<void> _exportReport(BuildContext context, WidgetRef ref) async {
+  Widget _breakdownSection(BuildContext context, IconData icon, String title, List<_Breakdown> items) {
+    final theme = Theme.of(context);
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(icon, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text('$title (${items.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],),
+            const SizedBox(height: 8),
+            ...items.map((b) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(b.label, style: const TextStyle(fontWeight: FontWeight.w500)),
+                            if (b.sub != null && b.sub!.isNotEmpty)
+                              Text(b.sub!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(formatMinutes(b.minutes),
+                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSecondaryContainer),),
+                      ),
+                    ],
+                  ),
+                ),),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _reportTypeLabel(ReportFilter f) {
+    final parts = <String>[];
+    if (f.clientId != null) parts.add('Client');
+    if (f.employeeId != null) parts.add('Employee');
+    if (f.department != null) parts.add('Department');
+    return parts.isEmpty ? 'All Data' : parts.join(' & ');
+  }
+
+  Future<void> _exportReport(
+    BuildContext context,
+    WidgetRef ref,
+    ReportFilter f,
+    List<WorkLog> logs,
+    ({List<_Breakdown> clients, List<_Breakdown> employees, List<_Breakdown> depts}) s,
+    List<Client> clients,
+    List<LogEmployee> employees,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final logs = ref.read(logReportProvider).valueOrNull ?? const [];
-    if (logs.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('Nothing to export.')));
-      return;
+    String t(int m) => formatMinutes(m);
+    String dec(int m) => (m / 60).toStringAsFixed(2);
+    String q(String? v) => '"${(v ?? '').replaceAll('"', '""')}"';
+    final totalMin = logs.fold<int>(0, (a, l) => a + l.timeSpentMinutes);
+
+    final clientObj = f.clientId == null ? null : clients.firstWhere((c) => c.id == f.clientId, orElse: () => const Client(id: '', name: ''));
+    final empObj = f.employeeId == null ? null : employees.firstWhere((e) => e.id == f.employeeId, orElse: () => const LogEmployee(id: '', name: ''));
+    final isAll = f.clientId == null && f.employeeId == null && f.department == null;
+
+    final n = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 45));
+    String pad(int x) => x.toString().padLeft(2, '0');
+    final genOn = '${n.year}-${pad(n.month)}-${pad(n.day)} ${pad(n.hour)}:${pad(n.minute)}';
+
+    final lines = <String>[];
+    lines.add(isAll ? 'COMPLETE WORK LOG REPORT - ALL CLIENTS & EMPLOYEES' : 'WORK LOG REPORT');
+    lines.add('');
+    if (clientObj != null) {
+      lines.add('Client Name,${q(clientObj.name)}');
+      if ((clientObj.code ?? '').isNotEmpty) lines.add('Client ID,${q(clientObj.code)}');
+    } else {
+      lines.add('Client Filter,All Clients');
     }
-    String q(String? s) => '"${(s ?? '').replaceAll('"', '""')}"';
-    final rows = <String>[
-      'Date,Employee,Department,Client,Client ID,Description,Time Spent,Hours,Start,End,Status,Notes',
-      for (final l in logs)
-        [
-          q(l.logDate), q(l.employeeName), q(departmentLabel(l.department)),
-          q(l.clientName), q(l.clientCode), q(l.taskDescription),
-          q(formatMinutes(l.timeSpentMinutes)),
-          (l.timeSpentMinutes / 60).toStringAsFixed(2),
-          q(l.startTime), q(l.endTime), q(l.statusLabel), q(l.notes),
-        ].join(','),
-    ];
-    await _share('work-logs-report', '\u{FEFF}${rows.join('\n')}', messenger);
+    if (empObj != null) {
+      lines.add('Employee Name,${q(empObj.name)}');
+      if ((empObj.employeeId ?? '').isNotEmpty) lines.add('Employee ID,${q(empObj.employeeId)}');
+    } else {
+      lines.add('Employee Filter,All Employees');
+    }
+    lines.add(f.department != null
+        ? 'Task Department Filter,${q(departmentLabel(f.department))}'
+        : 'Task Department Filter,All Task Departments',);
+    lines.add('Report Period,${f.start} to ${f.end}');
+    lines.add('Generated On,$genOn');
+    lines.add('');
+
+    lines.add('SUMMARY');
+    lines.add('');
+    lines.add('Total Entries,${logs.length}');
+    lines.add('Total Time,${t(totalMin)} (${dec(totalMin)} hours)');
+    if (f.clientId == null) lines.add('Total Clients,${s.clients.length}');
+    if (f.employeeId == null) lines.add('Total Employees,${s.employees.length}');
+    if (f.department == null) lines.add('Total Task Departments,${s.depts.length}');
+    lines.add('');
+
+    if (f.clientId == null && s.clients.isNotEmpty) {
+      lines.add('TIME BY CLIENT');
+      lines.add('');
+      lines.add('Client Name,Client ID,Total Time,Hours (Decimal)');
+      for (final c in s.clients) {
+        lines.add('${q(c.label)},${q(c.sub ?? 'N/A')},${q(t(c.minutes))},${dec(c.minutes)}');
+      }
+      lines.add('${q('TOTAL')},"",${q(t(totalMin))},${dec(totalMin)}');
+      lines.add('');
+    }
+    if (f.employeeId == null && s.employees.isNotEmpty) {
+      lines.add('TIME BY EMPLOYEE');
+      lines.add('');
+      lines.add('Employee Name,Department,Total Time,Hours (Decimal)');
+      for (final e in s.employees) {
+        lines.add('${q(e.label)},${q(e.sub)},${q(t(e.minutes))},${dec(e.minutes)}');
+      }
+      lines.add('${q('TOTAL')},"",${q(t(totalMin))},${dec(totalMin)}');
+      lines.add('');
+    }
+    if (f.department == null && s.depts.isNotEmpty) {
+      lines.add('TIME BY TASK DEPARTMENT');
+      lines.add('');
+      lines.add('Task Department,Total Time,Hours (Decimal)');
+      for (final d in s.depts) {
+        lines.add('${q(d.label)},${q(t(d.minutes))},${dec(d.minutes)}');
+      }
+      lines.add('${q('TOTAL')},${q(t(totalMin))},${dec(totalMin)}');
+      lines.add('');
+    }
+
+    lines.add('DETAILED LOG ENTRIES');
+    lines.add('');
+    lines.add('Date,Employee,Department,Task Department,Client,Client ID,Description,Time Spent,Hours (Decimal),Start Time,End Time,Status,Notes');
+    for (final l in logs) {
+      lines.add([
+        q(l.logDate),
+        q(l.employeeName ?? 'N/A'),
+        q(l.employeeDept ?? 'N/A'),
+        q(l.department != null ? departmentLabel(l.department) : 'N/A'),
+        q(l.clientName ?? 'N/A'),
+        q(l.clientCode ?? 'N/A'),
+        q(l.taskDescription),
+        q(t(l.timeSpentMinutes)),
+        dec(l.timeSpentMinutes),
+        q(l.startTime),
+        q(l.endTime),
+        q(l.status ?? 'completed'),
+        q(l.notes),
+      ].join(','),);
+    }
+
+    // Filename based on filters.
+    var name = 'work_logs';
+    if (clientObj != null) {
+      name += '_${clientObj.name.replaceAll(RegExp(r"\s+"), "_")}';
+      if ((clientObj.code ?? '').isNotEmpty) name += '_${clientObj.code}';
+    } else {
+      name += '_all_clients';
+    }
+    if (empObj != null) {
+      name += '_${empObj.name.replaceAll(RegExp(r"\s+"), "_")}';
+      if ((empObj.employeeId ?? '').isNotEmpty) name += '_${empObj.employeeId}';
+    } else {
+      name += '_all_employees';
+    }
+    if (f.department != null) {
+      name += '_${departmentLabel(f.department).replaceAll(RegExp(r"[→\s]+"), "_")}';
+    }
+    name += '_${f.start}_to_${f.end}';
+
+    await _share(name, '\u{FEFF}${lines.join('\n')}', messenger);
+  }
+}
+
+// ── Searchable picker ───────────────────────────────────
+Future<String?> _pick(
+  BuildContext context,
+  String title,
+  List<({String? value, String label, String? sub})> items,
+  String? current,
+) {
+  return showModalBottomSheet<String?>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _PickerSheet(title: title, items: items, current: current),
+  );
+}
+
+class _PickerSheet extends StatefulWidget {
+  const _PickerSheet({required this.title, required this.items, this.current});
+  final String title;
+  final List<({String? value, String label, String? sub})> items;
+  final String? current;
+
+  @override
+  State<_PickerSheet> createState() => _PickerSheetState();
+}
+
+class _PickerSheetState extends State<_PickerSheet> {
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.items.where((i) {
+      if (_q.isEmpty) return true;
+      final hay = '${i.label} ${i.sub ?? ''}'.toLowerCase();
+      return hay.contains(_q);
+    }).toList();
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      hintText: 'Search…',
+                    ),
+                    onChanged: (v) => setState(() => _q = v.toLowerCase()),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (_, i) {
+                  final item = filtered[i];
+                  final selected = item.value == widget.current;
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(selected ? Icons.check_circle : Icons.circle_outlined,
+                        size: 18, color: selected ? Theme.of(context).colorScheme.primary : null,),
+                    title: Text(item.label),
+                    subtitle: item.sub != null && item.sub!.isNotEmpty ? Text(item.sub!) : null,
+                    onTap: () => Navigator.pop(context, item.value),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Filter tile ─────────────────────────────────────────
+class _FilterTile extends StatelessWidget {
+  const _FilterTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.onClear,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: label,
+            prefixIcon: Icon(icon, size: 18),
+            suffixIcon: onClear != null
+                ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: onClear)
+                : const Icon(Icons.expand_more, size: 18),
+          ),
+          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,),
+        ),
+      ),
+    );
   }
 }
 

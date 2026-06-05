@@ -58,6 +58,16 @@ class LogSheetRepository {
         .toList();
   }
 
+  Future<List<LogEmployee>> employees() async {
+    final rows = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, department, employee_id, email')
+        .order('first_name', ascending: true);
+    return (rows as List)
+        .map((r) => LogEmployee.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   Future<void> addClient(String name, String? code) async {
     final ctx = await _context();
     final clean = name.trim();
@@ -120,16 +130,28 @@ class LogSheetRepository {
     String? employeeId,
     String? department,
   }) async {
-    var q = supabase
-        .from('work_logs')
-        .select(_teamCols)
-        .gte('log_date', start)
-        .lte('log_date', end);
-    if (clientId != null) q = q.eq('client_id', clientId);
-    if (employeeId != null) q = q.eq('employee_id', employeeId);
-    if (department != null) q = q.eq('department', department);
-    final rows = await q.order('log_date', ascending: false).limit(1000);
-    return _map(rows);
+    // Paginate (1000/page) to bypass the default row cap, like the web report.
+    const pageSize = 1000;
+    final all = <WorkLog>[];
+    var from = 0;
+    while (true) {
+      var q = supabase
+          .from('work_logs')
+          .select(_teamCols)
+          .gte('log_date', start)
+          .lte('log_date', end);
+      if (clientId != null) q = q.eq('client_id', clientId);
+      if (employeeId != null) q = q.eq('employee_id', employeeId);
+      if (department != null) q = q.eq('department', department);
+      final rows = await q
+          .order('log_date', ascending: false)
+          .range(from, from + pageSize - 1);
+      final batch = _map(rows);
+      all.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
   }
 
   Future<List<Map<String, dynamic>>> history(String logId) async {
