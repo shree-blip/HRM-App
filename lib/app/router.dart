@@ -8,6 +8,7 @@ import '../core/navigation/nav_items.dart';
 import '../core/widgets/app_loader.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
+import '../features/approvals/presentation/approvals_screen.dart';
 import '../features/attendance/presentation/attendance_screen.dart';
 import '../features/common/coming_soon_screen.dart';
 import '../features/leave/presentation/leave_screen.dart';
@@ -100,6 +101,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/leave',
         builder: (_, __) => const LeaveScreen(),
+      ),
+      // Approvals (Phase 6).
+      GoRoute(
+        path: '/approvals',
+        builder: (_, __) => const ApprovalsScreen(),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.

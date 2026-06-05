@@ -272,6 +272,75 @@ class AttendanceRepository {
     }
   }
 
+  /// Team adjustment requests visible to a manager/admin (RLS-scoped),
+  /// newest first, with requester names resolved.
+  Future<List<AdjustmentRequest>> teamAdjustments() async {
+    final uid = supabase.auth.currentUser?.id;
+    final rows = await supabase
+        .from('attendance_adjustment_requests')
+        .select(
+          'id, attendance_log_id, requested_by, status, reason, '
+          'proposed_clock_in, proposed_clock_out, proposed_break_minutes, '
+          'proposed_pause_minutes, original_clock_in, original_clock_out, '
+          'original_break_minutes, original_pause_minutes, reviewer_comment, '
+          'override_status, created_at',
+        )
+        .neq('requested_by', uid as Object)
+        .order('created_at', ascending: false);
+    final list = (rows as List)
+        .map((r) => AdjustmentRequest.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+    if (list.isEmpty) return list;
+
+    final ids =
+        list.map((r) => r.requestedBy).whereType<String>().toSet().toList();
+    final names = <String, String>{};
+    if (ids.isNotEmpty) {
+      final profs = await supabase
+          .from('profiles')
+          .select('user_id, first_name, last_name')
+          .inFilter('user_id', ids);
+      for (final p in profs as List) {
+        final m = p as Map;
+        names[m['user_id'] as String] =
+            '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+      }
+    }
+    return list
+        .map((r) => r.withRequester(names[r.requestedBy] ?? 'Employee'))
+        .toList();
+  }
+
+  /// Manager review (approve/reject). A DB trigger applies an approved
+  /// adjustment to the attendance log.
+  Future<void> reviewAdjustment(
+    String id, {
+    required bool approved,
+    String? comment,
+  }) async {
+    await supabase.from('attendance_adjustment_requests').update({
+      'status': approved ? 'approved' : 'rejected',
+      'reviewer_id': supabase.auth.currentUser!.id,
+      'reviewer_comment': comment,
+      'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// VP/Admin override of a prior review.
+  Future<void> overrideAdjustment(
+    String id, {
+    required bool approved,
+    String? comment,
+  }) async {
+    await supabase.from('attendance_adjustment_requests').update({
+      'status': approved ? 'approved' : 'rejected',
+      'override_status': approved ? 'approved' : 'rejected',
+      'override_by': supabase.auth.currentUser!.id,
+      'override_comment': comment,
+      'override_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', id);
+  }
+
   Future<List<AdjustmentRequest>> myAdjustmentRequests() async {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) return [];

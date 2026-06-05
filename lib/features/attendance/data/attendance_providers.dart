@@ -198,6 +198,14 @@ final myAdjustmentsProvider =
   return ref.read(attendanceRepositoryProvider).myAdjustmentRequests();
 });
 
+/// Team attendance adjustment requests for the approvals view (RLS-scoped).
+final teamAdjustmentsProvider =
+    FutureProvider.autoDispose<List<AdjustmentRequest>>((ref) async {
+  final auth = ref.watch(authControllerProvider);
+  if (auth.user == null || !auth.isManager) return const [];
+  return ref.read(attendanceRepositoryProvider).teamAdjustments();
+});
+
 /// Month-range activity events for the full-activity timeline (Week/Month).
 final fullActivityProvider =
     FutureProvider.autoDispose<List<LiveEvent>>((ref) async {
