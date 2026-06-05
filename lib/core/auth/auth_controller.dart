@@ -143,6 +143,15 @@ class AuthController extends Notifier<AppAuthState> {
         isLineManager: isLineManager,
         canCreateEmployee: canCreate,
       );
+    } catch (_) {
+      // Network blip / expired-token-refresh failure: don't hang on the
+      // splash loader. Keep the user authenticated with the session we have;
+      // screens and providers will refetch when connectivity returns.
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        user: user,
+        session: session,
+      );
     } finally {
       _initInFlight = false;
     }

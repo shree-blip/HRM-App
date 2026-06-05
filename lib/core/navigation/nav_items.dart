@@ -201,7 +201,7 @@ const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
   '/attendance': (title: 'Attendance', phase: 4),
   '/leave': (title: 'Leave', phase: 5),
   '/approvals': (title: 'Approvals', phase: 6),
-  '/employees': (title: 'Team', phase: 3),
+  // '/employees' is a real screen as of Phase 3 — see router.dart.
   '/reports': (title: 'Reports', phase: 7),
   '/payroll': (title: 'Payroll', phase: 8),
   '/documents': (title: 'Documents', phase: 9),

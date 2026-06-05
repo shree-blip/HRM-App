@@ -10,6 +10,9 @@ import '../features/auth/presentation/auth_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
 import '../features/common/coming_soon_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/employees/data/employee.dart';
+import '../features/employees/presentation/employee_detail_screen.dart';
+import '../features/employees/presentation/employees_screen.dart';
 
 /// Route paths used across the app.
 class Routes {
@@ -71,6 +74,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.dashboard,
         builder: (_, __) => const DashboardScreen(),
+      ),
+      // Employee Management (Phase 3) — list + read-only detail.
+      GoRoute(
+        path: '/employees',
+        builder: (_, __) => const EmployeesScreen(),
+        routes: [
+          GoRoute(
+            path: ':id',
+            builder: (context, state) => EmployeeDetailScreen(
+              employeeId: state.pathParameters['id']!,
+              initial: state.extra as EmployeeDirectoryItem?,
+            ),
+          ),
+        ],
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.
