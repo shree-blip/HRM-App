@@ -105,6 +105,11 @@ class _AssetCard extends ConsumerWidget {
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(req.description, style: theme.textTheme.bodySmall),
               ),
+            // Approval trail (existing reviewer/admin actions).
+            if (req.lineManagerApprovedAt != null)
+              _trail(theme, 'Manager approved', req.lineManagerApprovedAt!),
+            if (req.adminApprovedAt != null)
+              _trail(theme, 'Admin approved', req.adminApprovedAt!),
             if (req.isDeclined && req.rejectionReason?.isNotEmpty == true)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -135,6 +140,23 @@ class _AssetCard extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _trail(ThemeData theme, String label, DateTime d) {
+    final date = '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, size: 14, color: Color(0xFF16A34A)),
+          const SizedBox(width: 6),
+          Text('$label · $date',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+        ],
       ),
     );
   }
