@@ -10,6 +10,7 @@ import '../features/auth/presentation/auth_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
 import '../features/attendance/presentation/attendance_screen.dart';
 import '../features/common/coming_soon_screen.dart';
+import '../features/leave/presentation/leave_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/employees/data/employee.dart';
 import '../features/employees/presentation/employee_detail_screen.dart';
@@ -94,6 +95,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/attendance',
         builder: (_, __) => const AttendanceScreen(),
+      ),
+      // Leave (Phase 5).
+      GoRoute(
+        path: '/leave',
+        builder: (_, __) => const LeaveScreen(),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.

@@ -1,0 +1,107 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/leave_models.dart';
+import '../../data/leave_providers.dart';
+import 'leave_request_tile.dart';
+import 'reject_reason_dialog.dart';
+
+/// Manager/admin leave approval view: team requests grouped by status with
+/// approve/reject actions on pending ones. RLS scopes which requests appear.
+class LeaveApprovalsView extends ConsumerStatefulWidget {
+  const LeaveApprovalsView({super.key});
+
+  @override
+  ConsumerState<LeaveApprovalsView> createState() => _LeaveApprovalsViewState();
+}
+
+class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
+  String _status = 'pending';
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(teamLeaveRequestsProvider);
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(teamLeaveRequestsProvider);
+        await ref.read(teamLeaveRequestsProvider.future);
+      },
+      child: async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => ListView(
+          children: const [
+            Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('Could not load requests.')),
+            ),
+          ],
+        ),
+        data: (all) {
+          final counts = {
+            'pending': all.where((r) => r.status == 'pending').length,
+            'approved': all.where((r) => r.status == 'approved').length,
+            'rejected': all.where((r) => r.status == 'rejected').length,
+          };
+          final list = all.where((r) => r.status == _status).toList();
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(value: 'pending', label: Text('Pending (${counts['pending']})')),
+                  ButtonSegment(value: 'approved', label: Text('Approved (${counts['approved']})')),
+                  ButtonSegment(value: 'rejected', label: Text('Rejected (${counts['rejected']})')),
+                ],
+                selected: {_status},
+                onSelectionChanged: (s) => setState(() => _status = s.first),
+              ),
+              const SizedBox(height: 12),
+              if (list.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(child: Text('No requests.')),
+                )
+              else
+                for (final r in list)
+                  LeaveRequestTile(
+                    req: r,
+                    showName: true,
+                    onApprove: r.status == 'pending' ? () => _approve(r) : null,
+                    onReject: r.status == 'pending' ? () => _reject(r) : null,
+                  ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _approve(LeaveRequest r) async {
+    try {
+      await ref.read(leaveRepositoryProvider).approve(r);
+      ref.invalidate(teamLeaveRequestsProvider);
+      _toast('Leave approved.');
+    } catch (e) {
+      _toast('Failed: $e');
+    }
+  }
+
+  Future<void> _reject(LeaveRequest r) async {
+    final reason = await showRejectReasonDialog(context);
+    if (reason == null) return;
+    try {
+      await ref.read(leaveRepositoryProvider).reject(r, reason);
+      ref.invalidate(teamLeaveRequestsProvider);
+      _toast('Leave rejected.');
+    } catch (e) {
+      _toast('Failed: $e');
+    }
+  }
+
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(m)));
+  }
+}
