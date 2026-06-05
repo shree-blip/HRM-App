@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../support/data/asset_models.dart';
 import '../../support/data/asset_providers.dart';
+import '../../support/presentation/comments_thread.dart';
 
 /// Asset request approvals — two-stage (line manager -> admin) + decline.
 class AssetApprovalsView extends ConsumerStatefulWidget {
@@ -138,6 +139,8 @@ class _AssetCard extends ConsumerWidget {
                   ],
                 ),
               ),
+            // Comments/replies thread — shown on approved requests (matches web).
+            if (req.isApproved) AssetCommentsThread(requestId: req.id),
           ],
         ),
       ),

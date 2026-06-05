@@ -1,5 +1,6 @@
 import '../../../core/supabase/supabase_client.dart';
 import 'asset_models.dart';
+import 'comment_models.dart';
 
 /// Asset request approval data access (read + approve/decline). RLS scopes
 /// which requests an approver can see. No schema changes.
@@ -78,6 +79,39 @@ class AssetRepository {
     }).eq('id', req.id);
     await _notify(req.userId,
         'Your asset request "${req.title}" was declined${reason != null ? ': $reason' : ''}.',);
+  }
+
+  // ── Comments thread (asset_request_comments) ──────────
+  Future<List<CommentItem>> comments(String requestId) async {
+    final rows = await supabase
+        .from('asset_request_comments')
+        .select('id, user_id, content, created_at')
+        .eq('request_id', requestId)
+        .order('created_at', ascending: true);
+    final list = (rows as List)
+        .map((r) => CommentItem.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+    if (list.isEmpty) return list;
+    final ids = list.map((c) => c.userId).toSet().toList();
+    final names = <String, String>{};
+    final profs = await supabase
+        .from('profiles')
+        .select('user_id, first_name, last_name')
+        .inFilter('user_id', ids);
+    for (final p in profs as List) {
+      final m = p as Map;
+      names[m['user_id'] as String] =
+          '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+    }
+    return list.map((c) => c.withAuthor(names[c.userId] ?? 'User')).toList();
+  }
+
+  Future<void> postComment(String requestId, String content) async {
+    await supabase.from('asset_request_comments').insert({
+      'request_id': requestId,
+      'user_id': _uid,
+      'content': content,
+    });
   }
 
   Future<void> _notify(String userId, String message) async {
