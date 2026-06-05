@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/widgets/month_filter.dart';
 import '../../data/leave_models.dart';
 import '../../data/leave_providers.dart';
 import 'leave_request_tile.dart';
@@ -17,6 +18,7 @@ class LeaveApprovalsView extends ConsumerStatefulWidget {
 
 class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
   String _status = 'pending';
+  String _month = 'all'; // 'all' or YYYY-MM (by leave start date)
 
   @override
   Widget build(BuildContext context) {
@@ -37,15 +39,28 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
           ],
         ),
         data: (all) {
+          final months = {
+            for (final r in all) monthKeyFromString(r.startDate),
+          }.whereType<String>().toList();
+          // Month-filtered set drives BOTH the segment counts and the list.
+          final inMonth = all.where((r) =>
+              _month == 'all' || monthKeyFromString(r.startDate) == _month,);
           final counts = {
-            'pending': all.where((r) => r.status == 'pending').length,
-            'approved': all.where((r) => r.status == 'approved').length,
-            'rejected': all.where((r) => r.status == 'rejected').length,
+            'pending': inMonth.where((r) => r.status == 'pending').length,
+            'approved': inMonth.where((r) => r.status == 'approved').length,
+            'rejected': inMonth.where((r) => r.status == 'rejected').length,
           };
-          final list = all.where((r) => r.status == _status).toList();
+          final list =
+              inMonth.where((r) => r.status == _status).toList();
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
+              MonthFilterBar(
+                months: months,
+                selected: _month,
+                onChanged: (m) => setState(() => _month = m),
+              ),
+              const SizedBox(height: 12),
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'pending', label: Text('Pending (${counts['pending']})')),
