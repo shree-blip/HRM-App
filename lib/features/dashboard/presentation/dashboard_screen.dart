@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/shell/app_drawer.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../core/auth/auth_controller.dart';
-import '../../attendance/presentation/widgets/realtime_attendance_card.dart';
+import '../../attendance/presentation/widgets/live_attendance_card.dart';
 import '../../attendance/presentation/widgets/time_clock_card.dart';
 import '../data/dashboard_providers.dart';
 import '../data/dashboard_repository.dart';
@@ -65,11 +65,10 @@ class DashboardScreen extends ConsumerWidget {
             const TimeClockCard(),
             const SizedBox(height: 12),
 
-            // Live team attendance (managers) — Phase 4.
-            if (isManager) ...[
-              const RealtimeAttendanceCard(),
-              const SizedBox(height: 12),
-            ],
+            // Live Attendance — shown to everyone, matching the web app
+            // (RLS scopes which employees/logs the user can see).
+            const LiveAttendanceCard(),
+            const SizedBox(height: 12),
 
             summaryAsync.when(
               loading: () => const _StatGridSkeleton(),

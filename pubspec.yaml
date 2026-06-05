@@ -29,6 +29,10 @@ dependencies:
   # Form validation
   form_builder_validators: ^11.0.0
 
+  # CSV export / share (Live Attendance export)
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

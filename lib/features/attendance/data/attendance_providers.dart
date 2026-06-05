@@ -7,6 +7,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/supabase/supabase_client.dart';
 import 'attendance_models.dart';
 import 'attendance_repository.dart';
+import 'live_attendance.dart';
 
 final attendanceRepositoryProvider =
     Provider<AttendanceRepository>((_) => AttendanceRepository());
@@ -177,10 +178,76 @@ final teamAttendanceProvider =
   return ref.read(attendanceRepositoryProvider).teamAttendance();
 });
 
-/// Live "today" team counts for the dashboard real-time card.
-final liveAttendanceSummaryProvider =
-    FutureProvider.autoDispose<LiveAttendanceSummary>((ref) async {
-  final auth = ref.watch(authControllerProvider);
-  if (auth.user == null || !auth.isManager) return const LiveAttendanceSummary();
-  return ref.read(attendanceRepositoryProvider).liveSummary();
+final liveAttendanceRepositoryProvider =
+    Provider<LiveAttendanceRepository>((_) => LiveAttendanceRepository());
+
+/// Full Live Attendance snapshot (employees + summary + events), auto-refreshed
+/// by realtime changes on attendance_logs / attendance_break_sessions and a
+/// 60s poll — mirrors the web RealTimeAttendanceWidget.
+final liveAttendanceProvider =
+    AsyncNotifierProvider<LiveAttendanceController, LiveData>(
+  LiveAttendanceController.new,
+);
+
+/// Month-range activity events for the full-activity timeline (Week/Month).
+final fullActivityProvider =
+    FutureProvider.autoDispose<List<LiveEvent>>((ref) async {
+  final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
+  if (uid == null) return const [];
+  final now = DateTime.now().toUtc();
+  final monthStart = DateTime.utc(now.year, now.month, 1);
+  return ref.read(liveAttendanceRepositoryProvider).eventsSince(monthStart);
 });
+
+class LiveAttendanceController extends AsyncNotifier<LiveData> {
+  Timer? _timer;
+  RealtimeChannel? _channel;
+
+  @override
+  Future<LiveData> build() async {
+    final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
+    ref.onDispose(_dispose);
+    if (uid == null) return LiveData.empty;
+    _setup();
+    return ref.read(liveAttendanceRepositoryProvider).liveData();
+  }
+
+  void _setup() {
+    _channel ??= supabase
+        .channel('live-attendance')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'attendance_logs',
+          callback: (_) => _refresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'attendance_break_sessions',
+          callback: (_) => _refresh(),
+        )
+        .subscribe();
+    _timer ??= Timer.periodic(const Duration(seconds: 60), (_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final data = await ref.read(liveAttendanceRepositoryProvider).liveData();
+      state = AsyncData(data);
+    } catch (_) {
+      // keep last good snapshot
+    }
+  }
+
+  Future<void> refresh() => _refresh();
+
+  void _dispose() {
+    _timer?.cancel();
+    _timer = null;
+    if (_channel != null) {
+      supabase.removeChannel(_channel!);
+      _channel = null;
+    }
+  }
+}

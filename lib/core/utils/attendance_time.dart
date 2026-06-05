@@ -75,6 +75,32 @@ String formatDurationMinutes(int minutes) {
   return '${m}m';
 }
 
+/// "just now" / "5m ago" / "2h ago" / "3d ago" (web formatDistanceToNow-ish).
+String relativeFromNow(DateTime utc) {
+  final diff = DateTime.now().toUtc().difference(utc);
+  final s = diff.inSeconds;
+  if (s < 0) return 'just now';
+  if (s < 45) return 'just now';
+  if (s < 3600) return '${(s / 60).round()}m ago';
+  if (s < 86400) return '${(s / 3600).round()}h ago';
+  return '${(s / 86400).round()}d ago';
+}
+
+/// "Jun 9 • 2:30:45 PM" in NPT.
+String formatDateTimeLong(DateTime utc) {
+  final d = NptTime.toNpt(utc);
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  var h = d.hour % 12;
+  if (h == 0) h = 12;
+  final m = d.minute.toString().padLeft(2, '0');
+  final sec = d.second.toString().padLeft(2, '0');
+  final ap = d.hour < 12 ? 'AM' : 'PM';
+  return '${months[d.month - 1]} ${d.day} • $h:$m:$sec $ap';
+}
+
 /// "01:23:45" elapsed clock.
 String formatHms(Duration d) {
   final s = d.inSeconds < 0 ? 0 : d.inSeconds;

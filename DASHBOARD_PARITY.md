@@ -15,9 +15,9 @@ the Flutter dashboard now as tappable placeholder cards so the layout matches.
 | 7 | DailyTimelineWidget | ✅ Done | Milestones + deadlines + holidays |
 | 8 | PersonalReportsWidget (employee) | ✅ Done | Attendance progress, manager(s), teammates, annual leave |
 | 9 | TeamReportsWidget (manager) | ✅ Done* | Team size, clocked-in, pending leave, task % — *"top performers" deferred |
-| 10 | ClockWidget (clock in/out/break/pause) | ⏳ Placeholder | **Phase 4 (Attendance)** — links to /attendance |
-| 11 | RealTimeAttendanceWidget (managers) | ⏳ Placeholder | **Phase 4** — live team attendance |
-| 12 | PerformanceChart | ⏳ Placeholder | **Phase 4/7** — hours-vs-target chart |
+| 10 | ClockWidget (clock in/out/break/pause) | ✅ Done (Phase 4) | Live TimeClockCard on dashboard + Attendance |
+| 11 | RealTimeAttendanceWidget (managers) | ✅ Done (Phase 4) | RealtimeAttendanceCard: today working/break/paused/out |
+| 12 | PerformanceChart | ⏳ Placeholder | **Phase 7** — hours-vs-target chart |
 | 13 | CompanyCalendar (full calendar + add events) | ⏳ Placeholder | **Later phase** — own screen |
 | 14 | GlobalTimeZoneWidget | ❎ Skipped | Disabled/commented out in the web app too |
 
