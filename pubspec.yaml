@@ -33,6 +33,9 @@ dependencies:
   share_plus: ^10.1.4
   path_provider: ^2.1.5
 
+  # Open external links (Documents → Google Drive)
+  url_launcher: ^6.3.0
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
