@@ -6,6 +6,7 @@ class CommentItem {
     required this.content,
     required this.createdAt,
     this.authorName,
+    this.isInternal = false,
   });
 
   final String id;
@@ -13,6 +14,7 @@ class CommentItem {
   final String content;
   final DateTime? createdAt;
   final String? authorName;
+  final bool isInternal; // grievance internal (manager-only) comments
 
   CommentItem withAuthor(String? name) => CommentItem(
         id: id,
@@ -20,6 +22,7 @@ class CommentItem {
         content: content,
         createdAt: createdAt,
         authorName: name,
+        isInternal: isInternal,
       );
 
   factory CommentItem.fromMap(Map<String, dynamic> m) => CommentItem(
@@ -29,5 +32,6 @@ class CommentItem {
         createdAt: m['created_at'] != null
             ? DateTime.tryParse(m['created_at'] as String)?.toUtc()
             : null,
+        isInternal: m['is_internal'] == true,
       );
 }

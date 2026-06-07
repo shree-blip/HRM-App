@@ -12,6 +12,7 @@ import '../features/approvals/presentation/approvals_screen.dart';
 import '../features/attendance/presentation/attendance_screen.dart';
 import '../features/common/coming_soon_screen.dart';
 import '../features/documents/presentation/documents_screen.dart';
+import '../features/support/presentation/support_screen.dart';
 import '../features/leave/presentation/leave_screen.dart';
 import '../features/logsheet/presentation/logsheet_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
@@ -124,6 +125,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/documents',
         builder: (_, __) => const DocumentsScreen(),
+      ),
+      // Support, Bugs & Grievances (Phase 10).
+      GoRoute(
+        path: '/support',
+        builder: (_, __) => const SupportScreen(),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.

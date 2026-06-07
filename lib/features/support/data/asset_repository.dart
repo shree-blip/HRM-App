@@ -38,6 +38,28 @@ class AssetRepository {
         .toList();
   }
 
+  /// Create a new asset / IT-support request (enters pending_line_manager).
+  Future<void> createRequest({
+    required String title,
+    required String description,
+    String requestType = 'asset',
+  }) async {
+    String? empId;
+    try {
+      final v = await supabase.rpc('get_employee_id_for_user', params: {'_user_id': _uid});
+      if (v is String) empId = v;
+    } catch (_) {}
+    await supabase.from('asset_requests').insert({
+      'user_id': _uid,
+      'title': title.trim(),
+      'description': description.trim(),
+      'request_type': requestType,
+      'status': 'pending_line_manager',
+      'approval_stage': 'pending_line_manager',
+      if (empId != null) 'requester_employee_id': empId,
+    });
+  }
+
   /// Line manager approves -> forwards to admin.
   Future<void> lineManagerApprove(AssetRequest req) async {
     String? empId;
