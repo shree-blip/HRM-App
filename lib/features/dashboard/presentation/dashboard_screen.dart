@@ -7,6 +7,7 @@ import '../../../app/theme/app_theme.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../attendance/presentation/widgets/live_attendance_card.dart';
 import '../../attendance/presentation/widgets/time_clock_card.dart';
+import '../../calendar/presentation/company_calendar_card.dart';
 import '../data/dashboard_providers.dart';
 import '../data/dashboard_repository.dart';
 import 'widgets/announcements_card.dart';
@@ -110,13 +111,8 @@ class DashboardScreen extends ConsumerWidget {
             const AnnouncementsCard(),
             const SizedBox(height: 16),
 
-            // Full month calendar — later phase.
-            const PlaceholderWidgetCard(
-              icon: Icons.calendar_month,
-              title: 'Company Calendar',
-              subtitle: 'Full calendar, holidays & events',
-              phase: 9,
-            ),
+            // Company calendar (Phase 12).
+            const CompanyCalendarCard(),
             const SizedBox(height: 24),
           ],
         ),

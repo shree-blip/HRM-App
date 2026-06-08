@@ -12,7 +12,9 @@ import '../features/approvals/presentation/approvals_screen.dart';
 import '../features/attendance/presentation/attendance_screen.dart';
 import '../features/common/coming_soon_screen.dart';
 import '../features/announcements/presentation/announcements_screen.dart';
+import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/documents/presentation/documents_screen.dart';
+import '../features/profile/presentation/profile_screen.dart';
 import '../features/invoices/presentation/invoices_screen.dart';
 import '../features/loans/presentation/loans_screen.dart';
 import '../features/support/presentation/support_screen.dart';
@@ -146,6 +148,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/announcements',
         builder: (_, __) => const AnnouncementsScreen(),
+      ),
+      // Calendar + Profile (Phase 12).
+      GoRoute(
+        path: '/calendar',
+        builder: (_, __) => const CalendarScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (_, __) => const ProfileScreen(),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.
