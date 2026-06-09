@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/employee.dart';
 import '../data/employees_providers.dart';
+import 'employee_forms.dart';
 import 'widgets/employee_avatar.dart';
 
 /// Read-only employee profile: core info, who they report to, and their team.
@@ -39,9 +40,61 @@ class _DetailBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final relations = ref.watch(employeeRelationsProvider(employee.id));
+    final canManage = canManageEmployees(ref);
+    final isActive = employee.displayStatus != 'inactive';
+
+    Future<void> statusAction({required bool deactivate}) async {
+      final messenger = ScaffoldMessenger.of(context);
+      final nav = Navigator.of(context);
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(deactivate ? 'Deactivate employee?' : 'Reactivate employee?'),
+          content: Text(deactivate
+              ? '${employee.fullName} will be set inactive and their login access revoked.'
+              : '${employee.fullName} will be set active and able to log in again.',),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(
+              style: deactivate ? FilledButton.styleFrom(backgroundColor: theme.colorScheme.error) : null,
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(deactivate ? 'Deactivate' : 'Reactivate'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      final repo = ref.read(employeesRepositoryProvider);
+      try {
+        if (deactivate) {
+          await repo.deactivate(employee.id, employee.email);
+        } else {
+          await repo.reactivate(employee.id, employee.email);
+        }
+        ref.invalidate(employeesListProvider);
+        ref.invalidate(employeeByIdProvider(employee.id));
+        if (nav.canPop()) nav.pop();
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+      }
+    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Employee')),
+      appBar: AppBar(
+        title: const Text('Employee'),
+        actions: [
+          if (canManage)
+            IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () async {
+                final nav = Navigator.of(context);
+                final changed = await showEditEmployeeForm(context, ref, employee);
+                if (changed == true && nav.canPop()) nav.pop();
+              },
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -77,7 +130,19 @@ class _DetailBody extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+
+          if (canManage)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                style: isActive ? OutlinedButton.styleFrom(foregroundColor: theme.colorScheme.error) : null,
+                icon: Icon(isActive ? Icons.person_off_outlined : Icons.person_outline, size: 18),
+                label: Text(isActive ? 'Deactivate' : 'Reactivate'),
+                onPressed: () => statusAction(deactivate: isActive),
+              ),
+            ),
+          const SizedBox(height: 12),
 
           // Info
           _InfoCard(employee: employee),

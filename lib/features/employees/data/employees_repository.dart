@@ -1,10 +1,54 @@
 import '../../../core/supabase/supabase_client.dart';
 import 'employee.dart';
 
-/// Read-only employee data access. Everything is scoped by Supabase RLS via
-/// the `employee_directory` view — VP/Admin see everyone, line managers see
-/// their reports. No schema changes; no writes.
+/// Editable fields for one employee (manager view), prefilled from `employees`.
+class EmployeeEditData {
+  const EmployeeEditData({
+    this.firstName = '',
+    this.lastName = '',
+    this.email = '',
+    this.phone,
+    this.department,
+    this.jobTitle,
+    this.location,
+    this.status,
+  });
+  final String firstName;
+  final String lastName;
+  final String email;
+  final String? phone;
+  final String? department;
+  final String? jobTitle;
+  final String? location;
+  final String? status;
+
+  factory EmployeeEditData.fromMap(Map<String, dynamic> m) => EmployeeEditData(
+        firstName: (m['first_name'] ?? '') as String,
+        lastName: (m['last_name'] ?? '') as String,
+        email: (m['email'] ?? '') as String,
+        phone: m['phone'] as String?,
+        department: m['department'] as String?,
+        jobTitle: m['job_title'] as String?,
+        location: m['location'] as String?,
+        status: m['status'] as String?,
+      );
+}
+
+/// A line-manager option for the create form.
+class ManagerOption {
+  const ManagerOption({required this.id, required this.name, this.jobTitle});
+  final String id;
+  final String name;
+  final String? jobTitle;
+  String get label => jobTitle != null && jobTitle!.isNotEmpty ? '$name — $jobTitle' : name;
+}
+
+/// Employee data access. Reads via the RLS-scoped `employee_directory` view;
+/// manager writes go to the `employees` table (+ team_members / allowed_signups
+/// sync) exactly like the web. No schema changes.
 class EmployeesRepository {
+  String get _uid => supabase.auth.currentUser!.id;
+
   /// All employees visible to the current user, ordered by first name, with
   /// avatar URLs resolved from the public `avatars` bucket.
   Future<List<EmployeeDirectoryItem>> list() async {
@@ -163,6 +207,184 @@ class EmployeesRepository {
       }
     } catch (_) {
       // Avatars are non-critical; fall back to initials.
+    }
+  }
+
+  // ── Manager writes ──────────────────────────────────────
+  /// Active employees for the line-manager dropdown.
+  Future<List<ManagerOption>> managers() async {
+    final rows = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, job_title')
+        .or('status.eq.active,status.is.null')
+        .order('first_name', ascending: true);
+    return (rows as List).map((r) {
+      final m = r as Map;
+      return ManagerOption(
+        id: m['id'] as String,
+        name: '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
+        jobTitle: m['job_title'] as String?,
+      );
+    }).toList();
+  }
+
+  /// Full editable row from `employees` (managers have RLS access). Includes
+  /// phone, which the directory view omits.
+  Future<EmployeeEditData?> fullById(String id) async {
+    final row = await supabase
+        .from('employees')
+        .select('first_name, last_name, email, phone, department, job_title, location, status')
+        .eq('id', id)
+        .maybeSingle();
+    return row == null ? null : EmployeeEditData.fromMap(row.cast<String, dynamic>());
+  }
+
+  Future<bool> emailExists(String email) async {
+    final row = await supabase
+        .from('employees')
+        .select('id')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
+    return row != null;
+  }
+
+  /// Create an employee (+ team_members link if a line manager is set, +
+  /// allowed_signups whitelist, + welcome email). Mirrors the web flow.
+  Future<void> createEmployee({
+    required String firstName,
+    required String lastName,
+    required String email,
+    String? phone,
+    String? department,
+    String? jobTitle,
+    required String location,
+    String? lineManagerId,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final inserted = await supabase
+        .from('employees')
+        .insert({
+          'first_name': firstName.trim(),
+          'last_name': lastName.trim(),
+          'email': cleanEmail,
+          'phone': (phone == null || phone.trim().isEmpty) ? null : phone.trim(),
+          'department': department,
+          'job_title': jobTitle,
+          'location': location,
+          'status': 'active',
+          'hire_date': DateTime.now().toIso8601String().split('T').first,
+          if (lineManagerId != null) 'line_manager_id': lineManagerId,
+        })
+        .select('id')
+        .single();
+    final id = inserted['id'] as String;
+
+    // Mirror line-manager assignment into team_members (best-effort).
+    if (lineManagerId != null) {
+      try {
+        await supabase.from('team_members').insert({
+          'manager_employee_id': lineManagerId,
+          'member_employee_id': id,
+        });
+      } catch (_) {}
+    }
+
+    // Whitelist the email so the new hire can sign up.
+    try {
+      await supabase.from('allowed_signups').upsert({
+        'email': cleanEmail,
+        'employee_id': id,
+        'invited_by': _uid,
+        'invited_at': DateTime.now().toUtc().toIso8601String(),
+        'is_used': false,
+      }, onConflict: 'email',);
+    } catch (_) {
+      try {
+        await supabase.from('allowed_signups').insert({
+          'email': cleanEmail,
+          'employee_id': id,
+          'invited_by': _uid,
+          'invited_at': DateTime.now().toUtc().toIso8601String(),
+          'is_used': false,
+        });
+      } catch (_) {}
+    }
+
+    // Welcome email (best-effort).
+    try {
+      await supabase.functions.invoke('send-welcome-email', body: {
+        'employee_id': id,
+        'first_name': firstName.trim(),
+        'last_name': lastName.trim(),
+        'email': cleanEmail,
+        'job_title': jobTitle,
+        'department': department,
+        'start_date': DateTime.now().toIso8601String().split('T').first,
+      },);
+    } catch (_) {}
+  }
+
+  Future<void> updateEmployee(
+    String id, {
+    required String firstName,
+    required String lastName,
+    required String email,
+    String? phone,
+    String? department,
+    String? jobTitle,
+    required String location,
+    required String status,
+  }) async {
+    await supabase.from('employees').update({
+      'first_name': firstName.trim(),
+      'last_name': lastName.trim(),
+      'email': email.trim(),
+      'phone': (phone == null || phone.trim().isEmpty) ? null : phone.trim(),
+      'department': department,
+      'job_title': jobTitle,
+      'location': location,
+      'status': status,
+    }).eq('id', id);
+  }
+
+  /// Optional milestone fields on the linked profile (edit form).
+  Future<void> saveMilestones({String? userId, String? profileId, String? dob, String? joining}) async {
+    if (userId == null && profileId == null) return;
+    final updates = {'date_of_birth': (dob ?? '').isEmpty ? null : dob, 'joining_date': (joining ?? '').isEmpty ? null : joining};
+    try {
+      if (userId != null) {
+        await supabase.from('profiles').update(updates).eq('user_id', userId);
+      } else {
+        await supabase.from('profiles').update(updates).eq('id', profileId!);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> deactivate(String id, String? email) async {
+    await supabase.from('employees').update({
+      'status': 'inactive',
+      'termination_date': DateTime.now().toIso8601String().split('T').first,
+    }).eq('id', id);
+    if (email != null && email.isNotEmpty) {
+      try {
+        await supabase.from('allowed_signups').update({'is_used': true}).eq('email', email.toLowerCase());
+      } catch (_) {}
+    }
+  }
+
+  Future<void> reactivate(String id, String? email) async {
+    await supabase.from('employees').update({
+      'status': 'active',
+      'termination_date': null,
+    }).eq('id', id);
+    if (email != null && email.isNotEmpty) {
+      try {
+        await supabase.from('allowed_signups').upsert({
+          'email': email.toLowerCase(),
+          'is_used': false,
+          'invited_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'email',);
+      } catch (_) {}
     }
   }
 }

@@ -1,11 +1,29 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/permissions/permission.dart';
+import '../../../core/permissions/permissions_controller.dart';
 import 'employee.dart';
 import 'employees_repository.dart';
 
 final employeesRepositoryProvider =
     Provider<EmployeesRepository>((_) => EmployeesRepository());
+
+/// Active employees for the line-manager picker (create form).
+final employeeManagersProvider =
+    FutureProvider.autoDispose<List<ManagerOption>>(
+  (ref) => ref.read(employeesRepositoryProvider).managers(),
+);
+
+/// Can the current user add/edit/deactivate employees (web gates on isManager;
+/// admins/VP and an explicit manage_employees override also qualify).
+bool canManageEmployees(WidgetRef ref) {
+  final auth = ref.read(authControllerProvider);
+  return auth.isManager ||
+      auth.isAdmin ||
+      auth.isVp ||
+      ref.read(permissionsControllerProvider).has(Permission.manageEmployees);
+}
 
 /// All employees visible to the current user (RLS-scoped).
 final employeesListProvider =

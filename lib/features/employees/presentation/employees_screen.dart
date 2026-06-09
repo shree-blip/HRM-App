@@ -8,6 +8,7 @@ import '../../../core/permissions/permission.dart';
 import '../../../core/permissions/permissions_controller.dart';
 import '../data/employee.dart';
 import '../data/employees_providers.dart';
+import 'employee_forms.dart';
 import 'widgets/employee_avatar.dart';
 
 /// Read-only employee directory: searchable, filterable list (RLS-scoped).
@@ -45,6 +46,7 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
     // Don't flash "no access" while permissions are still loading.
     final stillResolving = perms.loading && !canView;
     final async = ref.watch(employeesListProvider);
+    final canManage = canView && canManageEmployees(ref);
 
     return Scaffold(
       appBar: AppBar(
@@ -58,6 +60,13 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/employees'),
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              onPressed: () => showAddEmployeeForm(context, ref),
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text('Add'),
+            )
+          : null,
       body: stillResolving
           ? const Center(child: CircularProgressIndicator())
           : !canView
