@@ -36,6 +36,9 @@ dependencies:
   # Open external links (Documents → Google Drive)
   url_launcher: ^6.3.0
 
+  # Inline document preview (Google Drive /preview embeds)
+  webview_flutter: ^4.7.0
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

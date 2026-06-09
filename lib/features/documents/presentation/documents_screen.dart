@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../data/document_models.dart';
 import '../data/documents_providers.dart';
+import '../data/drive_links.dart';
 import 'document_form.dart';
 
-/// Documents (Phase 9): list of HR documents (Google Drive links). Visibility
-/// is RLS-style filtered per category; managers/admin/VP see team docs.
+/// Documents (Phase 9 + hrm-update parity): Google Drive link documents with
+/// per-category bulk add, edit/replace link, inline preview, and the web's
+/// exact visibility + permission rules.
 class DocumentsScreen extends ConsumerStatefulWidget {
   const DocumentsScreen({super.key});
 
@@ -18,13 +21,12 @@ class DocumentsScreen extends ConsumerStatefulWidget {
 }
 
 class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
-  String _category = 'All';
+  String _category = 'All Documents';
   String _search = '';
 
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(documentsProvider);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Documents')),
       drawer: const AppDrawer(currentRoute: '/documents'),
@@ -37,12 +39,12 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Could not load documents.\n$e', textAlign: TextAlign.center)),
         data: (docs) {
-          final counts = <String, int>{'All': docs.length};
+          final counts = <String, int>{'All Documents': docs.length};
           for (final c in kDocCategories) {
             counts[c] = docs.where((d) => d.category == c).length;
           }
-          var list = docs.where((d) {
-            if (_category != 'All' && d.category != _category) return false;
+          final list = docs.where((d) {
+            if (_category != 'All Documents' && d.category != _category) return false;
             if (_search.isNotEmpty && !d.name.toLowerCase().contains(_search)) return false;
             return true;
           }).toList();
@@ -52,11 +54,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: TextField(
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    hintText: 'Search documents',
-                  ),
+                  decoration: const InputDecoration(isDense: true, prefixIcon: Icon(Icons.search, size: 18), hintText: 'Search documents'),
                   onChanged: (v) => setState(() => _search = v.toLowerCase()),
                 ),
               ),
@@ -66,10 +64,13 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   children: [
-                    for (final c in ['All', ...kDocCategories])
+                    for (final c in ['All Documents', ...kDocCategories])
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
+                          avatar: isRestrictedCategory(c)
+                              ? Icon(isLeaveEvidenceCategory(c) ? Icons.group_outlined : Icons.lock_outline, size: 14)
+                              : null,
                           label: Text('$c (${counts[c] ?? 0})'),
                           selected: _category == c,
                           onSelected: (_) => setState(() => _category = c),
@@ -85,12 +86,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                     await ref.read(documentsProvider.future);
                   },
                   child: list.isEmpty
-                      ? ListView(children: const [
-                          Padding(
-                            padding: EdgeInsets.all(40),
-                            child: Center(child: Text('No documents.')),
-                          ),
-                        ],)
+                      ? ListView(children: const [Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No documents found')))])
                       : ListView(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 88),
                           children: [for (final d in list) _DocCard(doc: d)],
@@ -110,21 +106,20 @@ class _DocCard extends ConsumerWidget {
   final HrDocument doc;
 
   bool _canManage(WidgetRef ref) {
-    final auth = ref.read(authControllerProvider);
-    // Contracts: VP/Admin only; other categories: allowed (web parity).
-    if (doc.category == 'Contracts') return auth.isVp || auth.isAdmin;
+    // Web: Edit Link + Delete show when category != Contracts || isVP.
+    if (doc.category == 'Contracts') return ref.read(authControllerProvider).isVp;
     return true;
   }
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    try {
-      final url = await ref.read(documentsRepositoryProvider).resolveUrl(doc);
-      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      if (!ok) messenger.showSnackBar(const SnackBar(content: Text('Could not open the link.')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Open failed: $e')));
+    final url = await ref.read(documentsRepositoryProvider).resolveUrl(doc);
+    if (url == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('This document has no link to open.')));
+      return;
     }
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!ok) messenger.showSnackBar(const SnackBar(content: Text('Could not open the link.')));
   }
 
   @override
@@ -143,9 +138,7 @@ class _DocCard extends ConsumerWidget {
               children: [
                 Icon(categoryIcon(doc.category), color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(doc.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
+                Expanded(child: Text(doc.name, style: const TextStyle(fontWeight: FontWeight.bold))),
                 if (doc.status != null)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -160,8 +153,9 @@ class _DocCard extends ConsumerWidget {
               runSpacing: 2,
               children: [
                 if (doc.category != null) _meta(theme, Icons.folder_outlined, doc.category!),
-                _meta(theme, Icons.description_outlined, docTypeLabel(doc.fileType)),
-                if (isRestrictedCategory(doc.category)) _meta(theme, Icons.lock_outline, 'Private'),
+                if (isRestrictedCategory(doc.category))
+                  _meta(theme, isLeaveEvidenceCategory(doc.category) ? Icons.group_outlined : Icons.lock_outline,
+                      isLeaveEvidenceCategory(doc.category) ? 'Restricted' : 'Private',),
                 if (doc.assigneeName != null && doc.assigneeName!.isNotEmpty)
                   _meta(theme, Icons.person_outline, doc.assigneeName!),
                 if (doc.uploaderName != null && doc.uploaderName!.isNotEmpty)
@@ -173,22 +167,24 @@ class _DocCard extends ConsumerWidget {
               children: [
                 TextButton.icon(
                   icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('Open'),
+                  label: const Text('Open in Drive'),
                   onPressed: () => _open(context, ref),
                 ),
                 const Spacer(),
-                if (canManage) ...[
-                  IconButton(
-                    tooltip: 'Edit',
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    onPressed: () => showDocumentForm(context, existing: doc),
+                TextButton(onPressed: () => _showView(context, ref, doc), child: const Text('View')),
+                if (canManage)
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'edit') _showEditLink(context, ref, doc, 'edit');
+                      if (v == 'replace') _showEditLink(context, ref, doc, 'replace');
+                      if (v == 'delete') _confirmDelete(context, ref, doc);
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Edit Link')),
+                      PopupMenuItem(value: 'replace', child: Text('Replace Link')),
+                      PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Color(0xFFDC2626)))),
+                    ],
                   ),
-                  IconButton(
-                    tooltip: 'Delete',
-                    icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
-                    onPressed: () => _confirmDelete(context, ref),
-                  ),
-                ],
               ],
             ),
           ],
@@ -197,7 +193,16 @@ class _DocCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+  Widget _meta(ThemeData theme, IconData icon, String text) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 3),
+          Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      );
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, HrDocument doc) async {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
@@ -215,20 +220,146 @@ class _DocCard extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    try {
-      await ref.read(documentsRepositoryProvider).deleteDocument(doc);
-      ref.invalidate(documentsProvider);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    final allowed = await ref.read(documentsRepositoryProvider).deleteDocument(doc);
+    if (!allowed) {
+      messenger.showSnackBar(const SnackBar(content: Text("You don't have permission to delete this document.")));
     }
+    ref.invalidate(documentsProvider);
+  }
+}
+
+// ── View dialog (inline Drive preview) ───────────────────
+void _showView(BuildContext context, WidgetRef ref, HrDocument doc) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _DocumentViewSheet(doc: doc),
+  );
+}
+
+class _DocumentViewSheet extends ConsumerWidget {
+  const _DocumentViewSheet({required this.doc});
+  final HrDocument doc;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final previewUrl = doc.hasDriveLink ? getDrivePreviewUrl(doc.driveLink) : '';
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Document Preview', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 12),
+            if (previewUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 360,
+                  child: WebViewWidget(
+                    controller: WebViewController()
+                      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                      ..loadRequest(Uri.parse(previewUrl)),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                child: Column(children: [
+                  Icon(categoryIcon(doc.category), size: 48, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 8),
+                  Text(doc.name, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text((doc.fileType ?? 'FILE').toUpperCase(), style: theme.textTheme.bodySmall),
+                ],),
+              ),
+            const SizedBox(height: 12),
+            _kv(theme, 'Category', doc.category ?? 'Uncategorized'),
+            _kv(theme, 'Source', doc.hasDriveLink ? 'Google Drive' : 'Stored file'),
+            _kv(theme, 'Status', doc.status ?? 'active'),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Open in Drive'),
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final url = await ref.read(documentsRepositoryProvider).resolveUrl(doc);
+                  if (url != null) {
+                    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                  } else {
+                    messenger.showSnackBar(const SnackBar(content: Text('No link to open.')));
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _meta(ThemeData theme, IconData icon, String text) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 3),
-          Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
+  Widget _kv(ThemeData theme, String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [
+          SizedBox(width: 90, child: Text(k, style: TextStyle(color: theme.colorScheme.onSurfaceVariant))),
+          Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w500))),
+        ],),
       );
+}
+
+// ── Edit / Replace link dialog ───────────────────────────
+void _showEditLink(BuildContext context, WidgetRef ref, HrDocument doc, String mode) {
+  final controller = TextEditingController(text: mode == 'edit' ? (doc.driveLink ?? '') : '');
+  String? error;
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setLocal) => AlertDialog(
+        title: Text(mode == 'edit' ? 'Edit Link' : 'Replace Link'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(mode == 'edit'
+                ? 'Update the Google Drive link for "${doc.name}".'
+                : 'Paste a new Google Drive link for "${doc.name}".',),
+            const SizedBox(height: 10),
+            TextField(controller: controller, keyboardType: TextInputType.url, decoration: const InputDecoration(hintText: 'https://drive.google.com/...')),
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text(kDriveLinkHelperText, style: Theme.of(ctx).textTheme.bodySmall)),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              if (!isValidDriveLink(controller.text)) {
+                setLocal(() => error = 'Please paste a valid Google Drive link.');
+                return;
+              }
+              final messenger = ScaffoldMessenger.of(context);
+              final nav = Navigator.of(ctx);
+              final allowed = await ref.read(documentsRepositoryProvider).updateDocumentLink(doc.id, controller.text.trim());
+              ref.invalidate(documentsProvider);
+              nav.pop();
+              if (!allowed) {
+                messenger.showSnackBar(const SnackBar(content: Text("You don't have permission to update this link.")));
+              }
+            },
+            child: Text(mode == 'edit' ? 'Update Link' : 'Replace Link'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

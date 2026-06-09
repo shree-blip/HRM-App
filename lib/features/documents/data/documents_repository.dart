@@ -1,87 +1,95 @@
 import '../../../core/supabase/supabase_client.dart';
 import 'document_models.dart';
 
-/// Documents data access. Visibility is enforced client-side per category
-/// (mirrors the web useDocuments rules). The Drive link lives in `file_path`;
-/// legacy storage rows resolve to a signed URL. No schema change.
+/// One Drive-link document to create (web DriveDocItem).
+class DriveDocItem {
+  const DriveDocItem({
+    required this.name,
+    required this.category,
+    required this.driveLink,
+    this.employeeId,
+    this.leaveRequestId,
+  });
+  final String name;
+  final String category;
+  final String driveLink;
+  final String? employeeId;
+  final String? leaveRequestId;
+}
+
+/// An employee option for the add/assign pickers.
+class DocEmployee {
+  const DocEmployee({required this.id, required this.name, this.employeeCode});
+  final String id;
+  final String name;
+  final String? employeeCode;
+  String get label => employeeCode != null && employeeCode!.isNotEmpty ? '$name ($employeeCode)' : name;
+}
+
+/// Documents data access. Stores Google Drive links in `drive_link`; legacy
+/// rows resolve `file_path` to a signed URL. Visibility filtered client-side
+/// exactly like the web useDocuments hook. No schema changes.
 class DocumentsRepository {
   String get _uid => supabase.auth.currentUser!.id;
 
-  Future<({String? employeeId, String? orgId})> _context() async {
-    String? empId;
-    try {
-      final r = await supabase.rpc('get_employee_id_for_user', params: {'_user_id': _uid});
-      if (r is String) empId = r;
-    } catch (_) {}
-    String? orgId;
-    if (empId != null) {
-      try {
-        final e = await supabase.from('employees').select('org_id').eq('id', empId).maybeSingle();
-        orgId = e?['org_id'] as String?;
-      } catch (_) {}
-    }
-    return (employeeId: empId, orgId: orgId);
-  }
-
-  /// All documents the current user may see, filtered by the same category
-  /// rules the web app applies client-side.
+  /// Documents the current user may see (web client-side category rules).
   Future<List<HrDocument>> visibleDocuments({
     required bool isAdmin,
     required bool isVp,
     required bool isManager,
     required bool isLineManager,
+    required bool hasManageDocuments, // effective manage_documents
+    required bool manageDocsOverridden, // explicit override row exists
   }) async {
     final uid = _uid;
-    final rows = await supabase
-        .from('documents')
-        .select()
-        .order('created_at', ascending: false);
-    final all = (rows as List)
-        .map((r) => HrDocument.fromMap((r as Map).cast<String, dynamic>()))
-        .toList();
+    final canManageDocs = isAdmin || isVp || isManager || hasManageDocuments;
+    final canManageRestrictedDocs = manageDocsOverridden ? hasManageDocuments : canManageDocs;
 
+    // Resolve my employee id + (for managers) managed report employee ids.
     String? myEmp;
     try {
       final r = await supabase.rpc('get_employee_id_for_user', params: {'_user_id': uid});
       if (r is String) myEmp = r;
     } catch (_) {}
-
-    var reportEmpIds = <String>{};
-    if ((isLineManager || isManager) && myEmp != null) {
+    var managed = <String>{};
+    if ((canManageDocs || isLineManager) && myEmp != null) {
       try {
         final rep = await supabase
             .from('employees')
             .select('id')
             .or('manager_id.eq.$myEmp,line_manager_id.eq.$myEmp');
-        reportEmpIds = (rep as List)
-            .map((e) => (e as Map)['id'] as String?)
-            .whereType<String>()
-            .toSet();
+        managed = (rep as List).map((e) => (e as Map)['id'] as String?).whereType<String>().toSet();
       } catch (_) {}
     }
 
+    final rows = await supabase.from('documents').select().order('created_at', ascending: false);
+    final all = (rows as List)
+        .map((r) => HrDocument.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+
     final visible = all.where((d) {
       switch (d.category) {
-        case 'Leave Evidence':
-          return d.uploadedBy == uid || isAdmin || isVp || isManager || isLineManager;
+        case kLeaveEvidenceCategory:
+          if (d.uploadedBy == uid) return true;
+          if (manageDocsOverridden) return canManageRestrictedDocs;
+          return canManageDocs || isLineManager;
         case 'Contracts':
-          return d.uploadedBy == uid ||
-              isAdmin ||
-              isVp ||
-              (d.employeeId != null && d.employeeId == myEmp);
+          if (d.uploadedBy == uid) return true;
+          if (d.employeeId != null && myEmp != null && d.employeeId == myEmp) return true;
+          return false;
         case 'Compliance':
-          return d.uploadedBy == uid ||
-              isAdmin ||
-              isVp ||
-              isManager ||
-              (d.employeeId != null && d.employeeId == myEmp) ||
-              (isLineManager && d.employeeId != null && reportEmpIds.contains(d.employeeId));
-        default:
-          return true; // Policies and any other category are public.
+          if (d.uploadedBy == uid) return true;
+          if (d.employeeId != null && myEmp != null && d.employeeId == myEmp) return true;
+          if (manageDocsOverridden) return canManageRestrictedDocs;
+          if (canManageDocs) return true;
+          if (isLineManager && d.employeeId != null && managed.contains(d.employeeId)) return true;
+          return false;
+        default: // Policies + anything else: public
+          return true;
       }
     }).toList();
 
-    // Resolve uploader + assignee names for display.
+    // Resolve uploader + assignee names.
     final uploaderIds = visible.map((d) => d.uploadedBy).whereType<String>().toSet().toList();
     final empIds = visible.map((d) => d.employeeId).whereType<String>().toSet().toList();
     final uploaders = <String, String>{};
@@ -93,8 +101,7 @@ class DocumentsRepository {
           .inFilter('user_id', uploaderIds);
       for (final p in profs as List) {
         final m = p as Map;
-        uploaders[m['user_id'] as String] =
-            '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+        uploaders[m['user_id'] as String] = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
       }
     }
     if (empIds.isNotEmpty) {
@@ -104,8 +111,7 @@ class DocumentsRepository {
           .inFilter('id', empIds);
       for (final e in emps as List) {
         final m = e as Map;
-        assignees[m['id'] as String] =
-            '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+        assignees[m['id'] as String] = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
       }
     }
     return [
@@ -117,73 +123,83 @@ class DocumentsRepository {
     ];
   }
 
-  /// Employees for the assign picker (Contracts / Compliance).
-  Future<List<({String id, String name})>> employees() async {
+  /// Active employees for the pickers.
+  Future<List<DocEmployee>> employees() async {
     final rows = await supabase
         .from('employees')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, employee_id, status')
+        .eq('status', 'active')
         .order('first_name', ascending: true);
     return (rows as List).map((r) {
       final m = r as Map;
-      return (
+      return DocEmployee(
         id: m['id'] as String,
         name: '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
+        employeeCode: m['employee_id'] as String?,
       );
     }).toList();
   }
 
-  Future<void> addDocument({
-    required String name,
-    required String driveUrl,
-    required String category,
-    String? fileType,
-    String? employeeId,
-  }) async {
-    final ctx = await _context();
+  /// The current user's own employee record id (for self-target compliance/leave).
+  Future<String?> myEmployeeId() async {
+    try {
+      final r = await supabase.rpc('get_employee_id_for_user', params: {'_user_id': _uid});
+      if (r is String) return r;
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _createOne(DriveDocItem item) async {
     await supabase.from('documents').insert({
-      'name': name.trim(),
-      'file_path': driveUrl.trim(),
-      'file_type': fileType ?? 'link',
-      'category': category,
+      'name': item.name,
+      'file_path': null,
+      'file_type': 'drive',
+      'file_size': null,
+      'category': item.category,
       'status': 'active',
       'uploaded_by': _uid,
-      if (employeeId != null) 'employee_id': employeeId,
-      if (ctx.orgId != null) 'org_id': ctx.orgId,
+      'drive_link': item.driveLink.trim(),
+      if (item.employeeId != null) 'employee_id': item.employeeId,
+      if (item.leaveRequestId != null) 'leave_request_id': item.leaveRequestId,
     });
   }
 
-  Future<void> updateDocument(
-    String id, {
-    required String name,
-    required String driveUrl,
-    String? fileType,
-    String? category,
-    Object? employeeId = _unset,
-  }) async {
-    await supabase.from('documents').update({
-      'name': name.trim(),
-      'file_path': driveUrl.trim(),
-      if (fileType != null) 'file_type': fileType,
-      if (category != null) 'category': category,
-      if (employeeId != _unset) 'employee_id': employeeId,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', id);
+  /// Bulk-create Drive-link documents (notifications are disabled in web).
+  Future<void> createDriveDocumentsBulk(List<DriveDocItem> items) async {
+    for (final item in items) {
+      await _createOne(item);
+    }
   }
 
-  Future<void> deleteDocument(HrDocument doc) async {
-    if (!doc.isLink && doc.filePath.isNotEmpty) {
+  /// Update the Drive link (Edit / Replace). Returns false if RLS blocked it.
+  Future<bool> updateDocumentLink(String id, String newLink) async {
+    final data = await supabase
+        .from('documents')
+        .update({'drive_link': newLink.trim(), 'updated_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', id)
+        .select('id');
+    return (data as List).isNotEmpty;
+  }
+
+  /// Delete a document (+ legacy storage file). Returns false if RLS blocked it.
+  Future<bool> deleteDocument(HrDocument doc) async {
+    if (doc.hasLegacyFile) {
       try {
-        await supabase.storage.from('documents').remove([doc.filePath]);
+        await supabase.storage.from('documents').remove([doc.filePath!]);
       } catch (_) {}
     }
-    await supabase.from('documents').delete().eq('id', doc.id);
+    final data = await supabase.from('documents').delete().eq('id', doc.id).select('id');
+    return (data as List).isNotEmpty;
   }
 
-  /// The launchable URL for a document (the Drive link, or a signed storage URL).
-  Future<String> resolveUrl(HrDocument doc) async {
-    if (doc.isLink) return doc.filePath;
-    return supabase.storage.from('documents').createSignedUrl(doc.filePath, 3600);
+  /// Launchable URL: the Drive link, or a signed URL for a legacy stored file.
+  Future<String?> resolveUrl(HrDocument doc) async {
+    if (doc.hasDriveLink) return doc.driveLink!.trim();
+    if (doc.hasLegacyFile) {
+      try {
+        return await supabase.storage.from('documents').createSignedUrl(doc.filePath!, 3600);
+      } catch (_) {}
+    }
+    return null;
   }
-
-  static const _unset = Object();
 }

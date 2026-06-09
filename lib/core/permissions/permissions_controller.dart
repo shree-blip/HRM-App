@@ -10,12 +10,22 @@ import 'permission.dart';
 
 /// Effective permissions for the current user, with loading flag.
 class PermissionsState {
-  const PermissionsState({this.permissions = const {}, this.loading = true});
+  const PermissionsState({
+    this.permissions = const {},
+    this.overridden = const {},
+    this.loading = true,
+  });
 
   final Map<Permission, bool> permissions;
+
+  /// Permission keys that have an explicit `user_permission_overrides` row.
+  final Set<String> overridden;
   final bool loading;
 
   bool has(Permission p) => permissions[p] ?? false;
+
+  /// True when a Custom Override row exists for [p] (web `hasExplicitOverride`).
+  bool hasExplicitOverride(Permission p) => overridden.contains(p.key);
 
   /// At least one of [perms] is granted (matches React `hasRouteAccess`).
   bool hasAny(List<Permission> perms) => perms.any(has);
@@ -28,10 +38,12 @@ class PermissionsState {
 
   PermissionsState copyWith({
     Map<Permission, bool>? permissions,
+    Set<String>? overridden,
     bool? loading,
   }) =>
       PermissionsState(
         permissions: permissions ?? this.permissions,
+        overridden: overridden ?? this.overridden,
         loading: loading ?? this.loading,
       );
 }
@@ -99,7 +111,11 @@ class PermissionsController extends Notifier<PermissionsState> {
       effective[p] = overrides[p.key] ?? rolePerms[p.key] ?? false;
     }
 
-    state = PermissionsState(permissions: effective, loading: false);
+    state = PermissionsState(
+      permissions: effective,
+      overridden: overrides.keys.toSet(),
+      loading: false,
+    );
 
     _subscribeRealtime(userId);
   }
