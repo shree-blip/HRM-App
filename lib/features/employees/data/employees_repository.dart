@@ -1,5 +1,6 @@
 import '../../../core/supabase/supabase_client.dart';
 import 'employee.dart';
+import 'team_models.dart';
 
 /// Editable fields for one employee (manager view), prefilled from `employees`.
 class EmployeeEditData {
@@ -386,5 +387,246 @@ class EmployeesRepository {
         }, onConflict: 'email',);
       } catch (_) {}
     }
+  }
+
+  // ── Team / profile relations (parity with EmployeeProfileDialog) ──
+  static const _teamCols = 'id, first_name, last_name, email, department, job_title, status';
+
+  /// People who report to [employeeId] — junction table + legacy
+  /// line_manager_id / manager_id columns, deduplicated and name-sorted.
+  Future<List<TeamMember>> fetchCombinedTeam(String employeeId) async {
+    final junction = await supabase
+        .from('team_members')
+        .select('member_employee_id')
+        .eq('manager_employee_id', employeeId);
+    final junctionIds = (junction as List)
+        .map((r) => (r as Map)['member_employee_id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    final line = await supabase.from('employees').select(_teamCols).eq('line_manager_id', employeeId);
+    final mgr = await supabase.from('employees').select(_teamCols).eq('manager_id', employeeId);
+
+    final byId = <String, TeamMember>{};
+    for (final r in [...line as List, ...mgr as List]) {
+      final m = TeamMember.fromMap((r as Map).cast<String, dynamic>());
+      if (m.id.isNotEmpty) byId[m.id] = m;
+    }
+    final missing = junctionIds.where((id) => !byId.containsKey(id)).toList();
+    if (missing.isNotEmpty) {
+      final extra = await supabase.from('employees').select(_teamCols).inFilter('id', missing);
+      for (final r in extra as List) {
+        final m = TeamMember.fromMap((r as Map).cast<String, dynamic>());
+        if (m.id.isNotEmpty) byId[m.id] = m;
+      }
+    }
+    final list = byId.values.toList()
+      ..sort((a, b) => a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase()));
+    return list;
+  }
+
+  /// Which of [employeeIds] are themselves managers (have a sub-team) — used
+  /// to show the "Team Lead" badge + drill-down affordance.
+  Future<Set<String>> detectManagers(List<String> employeeIds) async {
+    if (employeeIds.isEmpty) return {};
+    final ids = <String>{};
+    final j = await supabase.from('team_members').select('manager_employee_id').inFilter('manager_employee_id', employeeIds);
+    for (final r in j as List) {
+      final v = (r as Map)['manager_employee_id'] as String?;
+      if (v != null) ids.add(v);
+    }
+    final lm = await supabase.from('employees').select('line_manager_id').inFilter('line_manager_id', employeeIds);
+    for (final r in lm as List) {
+      final v = (r as Map)['line_manager_id'] as String?;
+      if (v != null) ids.add(v);
+    }
+    final mm = await supabase.from('employees').select('manager_id').inFilter('manager_id', employeeIds);
+    for (final r in mm as List) {
+      final v = (r as Map)['manager_id'] as String?;
+      if (v != null) ids.add(v);
+    }
+    return ids;
+  }
+
+  /// Managers an employee reports to ("Reports To"), from the junction table.
+  Future<List<ManagerRef>> managersOf(String employeeId) async {
+    final rows = await supabase
+        .from('team_members')
+        .select('manager_employee_id')
+        .eq('member_employee_id', employeeId);
+    final ids = (rows as List)
+        .map((r) => (r as Map)['manager_employee_id'] as String?)
+        .whereType<String>()
+        .toList();
+    if (ids.isEmpty) return [];
+    final mgrs = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, email, job_title, department')
+        .inFilter('id', ids)
+        .order('first_name', ascending: true);
+    return (mgrs as List)
+        .map((r) => ManagerRef.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Employees not yet on [managerId]'s team (for the Add-to-Team picker).
+  Future<List<TeamMember>> availableForTeam(String managerId) async {
+    final existing = await supabase
+        .from('team_members')
+        .select('member_employee_id')
+        .eq('manager_employee_id', managerId);
+    final taken = (existing as List)
+        .map((r) => (r as Map)['member_employee_id'] as String?)
+        .whereType<String>()
+        .toSet();
+    final rows = await supabase
+        .from('employees')
+        .select(_teamCols)
+        .or('status.eq.active,status.is.null')
+        .order('first_name', ascending: true);
+    return (rows as List)
+        .map((r) => TeamMember.fromMap((r as Map).cast<String, dynamic>()))
+        .where((e) => e.id.isNotEmpty && e.id != managerId && !taken.contains(e.id))
+        .toList();
+  }
+
+  /// Idempotent team assignment via the backend RPC (+ best-effort notify).
+  Future<void> addTeamMember(String managerId, String memberId) async {
+    await supabase.rpc('add_team_member', params: {
+      '_manager_employee_id': managerId,
+      '_member_employee_id': memberId,
+    },);
+    try {
+      final emp = await supabase.from('employees').select('profile_id').eq('id', memberId).maybeSingle();
+      final profileId = emp?['profile_id'] as String?;
+      if (profileId != null) {
+        final prof = await supabase.from('profiles').select('user_id').eq('id', profileId).maybeSingle();
+        final userId = prof?['user_id'] as String?;
+        if (userId != null) {
+          await supabase.rpc('create_notification', params: {
+            'p_user_id': userId,
+            'p_title': '👥 Added to Team',
+            'p_message': "You have been added to your manager's team.",
+            'p_type': 'team',
+            'p_link': '/employees',
+          },);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Remove a member: delete junction row + clear legacy columns pointing here.
+  Future<void> removeFromTeam(String managerId, String memberId) async {
+    await supabase
+        .from('team_members')
+        .delete()
+        .eq('manager_employee_id', managerId)
+        .eq('member_employee_id', memberId);
+    try {
+      final row = await supabase
+          .from('employees')
+          .select('line_manager_id, manager_id')
+          .eq('id', memberId)
+          .maybeSingle();
+      if (row != null) {
+        final updates = <String, dynamic>{};
+        if (row['line_manager_id'] == managerId) updates['line_manager_id'] = null;
+        if (row['manager_id'] == managerId) updates['manager_id'] = null;
+        if (updates.isNotEmpty) {
+          await supabase.from('employees').update(updates).eq('id', memberId);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Resolve the auth user_id behind a profile_id (for leave queries).
+  Future<String?> userIdForProfile(String? profileId) async {
+    if (profileId == null) return null;
+    try {
+      final r = await supabase.from('profiles').select('user_id').eq('id', profileId).maybeSingle();
+      return r?['user_id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Birthday / work anniversary from the linked profile.
+  Future<EmployeeMilestones> milestones({String? userId, String? profileId}) async {
+    if (userId == null && profileId == null) return const EmployeeMilestones();
+    try {
+      final q = supabase.from('profiles').select('date_of_birth, joining_date');
+      final row = userId != null
+          ? await q.eq('user_id', userId).maybeSingle()
+          : await q.eq('id', profileId!).maybeSingle();
+      if (row == null) return const EmployeeMilestones();
+      return EmployeeMilestones(dob: row['date_of_birth'] as String?, joining: row['joining_date'] as String?);
+    } catch (_) {
+      return const EmployeeMilestones();
+    }
+  }
+
+  /// Leave balances for the current fiscal year (Jul 1 – Jun 30), merging
+  /// `leave_balances` with approved `leave_requests`, mirroring the web logic.
+  Future<List<LeaveBalance>> leaveBalances(String userId, DateTime now) async {
+    final fyStartYear = now.month >= 7 ? now.year : now.year - 1;
+    final fyStart = '$fyStartYear-07-01';
+    final fyEnd = '${fyStartYear + 1}-06-30';
+
+    final balances = await supabase
+        .from('leave_balances')
+        .select('leave_type, total_days, used_days')
+        .eq('user_id', userId)
+        .eq('year', fyStartYear + 1);
+
+    final approved = await supabase
+        .from('leave_requests')
+        .select('leave_type, days, is_half_day')
+        .eq('user_id', userId)
+        .eq('status', 'approved')
+        .gte('start_date', fyStart)
+        .lte('start_date', fyEnd);
+
+    final usedMap = <String, double>{};
+    for (final r in approved as List) {
+      final m = r as Map;
+      var type = (m['leave_type'] ?? '') as String;
+      if (type.startsWith('Other Leave -')) {
+        type = 'Other Leave';
+      } else if (type.startsWith('Leave in Lieu')) {
+        type = 'Leave in Lieu';
+      }
+      final isHalf = m['is_half_day'] == true;
+      final days = isHalf ? 0.5 : ((m['days'] as num?)?.toDouble() ?? 0);
+      usedMap[type] = (usedMap[type] ?? 0) + days;
+    }
+
+    final balanceMap = <String, ({double total, double used})>{};
+    for (final b in balances as List) {
+      final m = b as Map;
+      balanceMap[(m['leave_type'] ?? '') as String] = (
+        total: (m['total_days'] as num?)?.toDouble() ?? 0,
+        used: (m['used_days'] as num?)?.toDouble() ?? 0,
+      );
+    }
+    const subsumed = ['Sick Leave', 'Other Leave - Sick Leave', 'Other Leave'];
+    usedMap.forEach((type, used) {
+      if (!balanceMap.containsKey(type) && !subsumed.contains(type)) {
+        balanceMap[type] = (total: 0, used: used);
+      }
+    });
+
+    const hidden = ['Sick Leave', 'Personal Leave', 'Comp Time'];
+    final out = <LeaveBalance>[];
+    balanceMap.forEach((type, v) {
+      if (hidden.contains(type)) return;
+      out.add(LeaveBalance(leaveType: type, totalDays: v.total, usedDays: v.used));
+    });
+    const order = ['Annual Leave', 'Leave in Lieu'];
+    out.sort((a, b) {
+      final ai = order.indexOf(a.leaveType);
+      final bi = order.indexOf(b.leaveType);
+      return (ai == -1 ? 99 : ai).compareTo(bi == -1 ? 99 : bi);
+    });
+    return out;
   }
 }
