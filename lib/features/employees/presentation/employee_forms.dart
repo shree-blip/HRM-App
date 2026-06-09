@@ -228,14 +228,22 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
     _department = kEmpDepartments.contains(e.department) ? e.department : null;
     _location = e.location == 'Nepal' ? 'Nepal' : (e.location == 'US' ? 'US' : null);
     _status = kEmpStatuses.contains(e.status) ? e.status! : 'active';
+    final repo = ref.read(employeesRepositoryProvider);
     try {
-      final full = await ref.read(employeesRepositoryProvider).fullById(e.id);
+      final full = await repo.fullById(e.id);
       if (full != null && mounted) {
         _phone.text = full.phone ?? '';
         if (kEmpDepartments.contains(full.department)) _department = full.department;
         if (full.location == 'US' || full.location == 'Nepal') _location = full.location;
         if (kEmpStatuses.contains(full.status)) _status = full.status!;
       }
+    } catch (_) {}
+    // Preload milestones from the same source View Profile uses (the linked
+    // profiles row), so existing birthday / anniversary show up here too.
+    try {
+      final ms = await repo.milestones(profileId: e.profileId);
+      _dob = (ms.dob?.isNotEmpty == true) ? ms.dob : null;
+      _joining = (ms.joining?.isNotEmpty == true) ? ms.joining : null;
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
   }
