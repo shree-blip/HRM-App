@@ -39,6 +39,9 @@ dependencies:
   # Inline document preview (Google Drive /preview embeds)
   webview_flutter: ^4.7.0
 
+  # Avatar upload (Settings → profile photo)
+  image_picker: ^1.1.2
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

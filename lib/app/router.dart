@@ -15,6 +15,7 @@ import '../features/announcements/presentation/announcements_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/documents/presentation/documents_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
+import '../features/settings/presentation/settings_screen.dart';
 import '../features/invoices/presentation/invoices_screen.dart';
 import '../features/loans/presentation/loans_screen.dart';
 import '../features/notifications/presentation/notifications_screen.dart';
@@ -165,6 +166,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tasks',
         builder: (_, __) => const TasksScreen(),
+      ),
+      // Settings.
+      GoRoute(
+        path: '/settings',
+        builder: (_, __) => const SettingsScreen(),
       ),
       GoRoute(
         path: '/profile',
