@@ -201,7 +201,6 @@ const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
   // '/employees' (Phase 3), '/attendance' (Phase 4), '/leave' (Phase 5),
   // '/approvals' (Phase 6) are real screens.
   '/payroll': (title: 'Payroll', phase: 8),
-  '/tasks': (title: 'Tasks', phase: 9),
   '/onboarding': (title: 'Onboarding', phase: 9),
   '/my-onboarding': (title: 'My Onboarding', phase: 9),
   '/my-offboarding': (title: 'My Offboarding', phase: 9),
