@@ -8,6 +8,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../attendance/presentation/widgets/live_attendance_card.dart';
 import '../../attendance/presentation/widgets/time_clock_card.dart';
 import '../../calendar/presentation/company_calendar_card.dart';
+import '../../notifications/presentation/notifications_bell.dart';
 import '../data/dashboard_providers.dart';
 import '../data/dashboard_repository.dart';
 import 'widgets/announcements_card.dart';
@@ -39,6 +40,7 @@ class DashboardScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Dashboard'),
         actions: [
+          const NotificationsBell(),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),

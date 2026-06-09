@@ -17,6 +17,7 @@ import '../features/documents/presentation/documents_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/invoices/presentation/invoices_screen.dart';
 import '../features/loans/presentation/loans_screen.dart';
+import '../features/notifications/presentation/notifications_screen.dart';
 import '../features/support/presentation/support_screen.dart';
 import '../features/leave/presentation/leave_screen.dart';
 import '../features/logsheet/presentation/logsheet_screen.dart';
@@ -153,6 +154,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/calendar',
         builder: (_, __) => const CalendarScreen(),
+      ),
+      // Notifications (Critical Fix 2).
+      GoRoute(
+        path: '/notifications',
+        builder: (_, __) => const NotificationsScreen(),
       ),
       GoRoute(
         path: '/profile',
