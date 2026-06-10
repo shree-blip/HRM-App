@@ -25,6 +25,7 @@ import '../features/leave/presentation/leave_screen.dart';
 import '../features/logsheet/presentation/logsheet_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/access_control/presentation/access_control_screen.dart';
 import '../features/employees/data/employee.dart';
 import '../features/employees/presentation/employee_detail_screen.dart';
 import '../features/employees/presentation/employees_screen.dart';
@@ -171,6 +172,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (_, __) => const SettingsScreen(),
+      ),
+      // Access Control.
+      GoRoute(
+        path: '/access-control',
+        builder: (_, __) => const AccessControlScreen(),
       ),
       GoRoute(
         path: '/profile',

@@ -204,6 +204,5 @@ const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
   '/onboarding': (title: 'Onboarding', phase: 9),
   '/my-onboarding': (title: 'My Onboarding', phase: 9),
   '/my-offboarding': (title: 'My Offboarding', phase: 9),
-  '/access-control': (title: 'Access Control', phase: 9),
   '/timezone-management': (title: 'Timezones', phase: 9),
 };
