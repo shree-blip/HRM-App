@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.focusyourfinance.hrm_focus_flutter"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker's transitive flutter_plugin_android_lifecycle requires
+    // compiling against API 36+. Compile-time only; targetSdk/minSdk unchanged.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

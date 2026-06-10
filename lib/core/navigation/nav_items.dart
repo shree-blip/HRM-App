@@ -133,6 +133,12 @@ const List<NavItem> kNavItems = [
     permissions: [Permission.viewInvoices, Permission.manageInvoices],
   ),
   NavItem(
+    label: 'Hiring',
+    icon: Icons.work_outline,
+    route: '/hiring',
+    alwaysVisible: true,
+  ),
+  NavItem(
     label: 'Onboarding',
     icon: Icons.person_add_alt_1_outlined,
     route: '/onboarding',

@@ -42,6 +42,9 @@ dependencies:
   # Avatar upload (Settings → profile photo)
   image_picker: ^1.1.2
 
+  # Hiring post attachments (pick a JD PDF/any file)
+  file_picker: ^8.1.2
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

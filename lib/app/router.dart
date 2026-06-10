@@ -29,6 +29,7 @@ import '../features/access_control/presentation/access_control_screen.dart';
 import '../features/onboarding/presentation/onboarding_screen.dart';
 import '../features/onboarding/presentation/my_onboarding_screen.dart';
 import '../features/onboarding/presentation/my_offboarding_screen.dart';
+import '../features/hiring/presentation/hiring_screen.dart';
 import '../features/employees/data/employee.dart';
 import '../features/employees/presentation/employee_detail_screen.dart';
 import '../features/employees/presentation/employees_screen.dart';
@@ -193,6 +194,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/my-offboarding',
         builder: (_, __) => const MyOffboardingScreen(),
+      ),
+      // Hiring.
+      GoRoute(
+        path: '/hiring',
+        builder: (_, __) => const HiringScreen(),
       ),
       GoRoute(
         path: '/profile',
