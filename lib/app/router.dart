@@ -30,6 +30,7 @@ import '../features/onboarding/presentation/onboarding_screen.dart';
 import '../features/onboarding/presentation/my_onboarding_screen.dart';
 import '../features/onboarding/presentation/my_offboarding_screen.dart';
 import '../features/hiring/presentation/hiring_screen.dart';
+import '../features/timezone/presentation/timezone_screen.dart';
 import '../features/employees/data/employee.dart';
 import '../features/employees/presentation/employee_detail_screen.dart';
 import '../features/employees/presentation/employees_screen.dart';
@@ -199,6 +200,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/hiring',
         builder: (_, __) => const HiringScreen(),
+      ),
+      // Timezone Management.
+      GoRoute(
+        path: '/timezone-management',
+        builder: (_, __) => const TimezoneScreen(),
       ),
       GoRoute(
         path: '/profile',

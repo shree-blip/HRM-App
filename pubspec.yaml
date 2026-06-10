@@ -45,6 +45,9 @@ dependencies:
   # Hiring post attachments (pick a JD PDF/any file)
   file_picker: ^8.1.2
 
+  # IANA timezone math (Timezone Management: local time, abbr, UTC offset)
+  timezone: ^0.9.4
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
