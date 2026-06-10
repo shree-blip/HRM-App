@@ -26,6 +26,9 @@ import '../features/logsheet/presentation/logsheet_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/access_control/presentation/access_control_screen.dart';
+import '../features/onboarding/presentation/onboarding_screen.dart';
+import '../features/onboarding/presentation/my_onboarding_screen.dart';
+import '../features/onboarding/presentation/my_offboarding_screen.dart';
 import '../features/employees/data/employee.dart';
 import '../features/employees/presentation/employee_detail_screen.dart';
 import '../features/employees/presentation/employees_screen.dart';
@@ -177,6 +180,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/access-control',
         builder: (_, __) => const AccessControlScreen(),
+      ),
+      // Onboarding / Offboarding.
+      GoRoute(
+        path: '/onboarding',
+        builder: (_, __) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/my-onboarding',
+        builder: (_, __) => const MyOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/my-offboarding',
+        builder: (_, __) => const MyOffboardingScreen(),
       ),
       GoRoute(
         path: '/profile',
