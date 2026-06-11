@@ -203,14 +203,17 @@ final myAdjustmentsProvider =
   return ref.read(attendanceRepositoryProvider).myAdjustmentRequests();
 });
 
-/// Team attendance adjustment requests for the approvals view. RLS scopes
-/// which requests are visible (managers/admins see their team's), so we don't
-/// pre-gate on the client role flags.
+/// Team attendance adjustment requests for the approvals view. VP/Admin
+/// org-wide; every other manager limited to their team (web
+/// useAttendanceAdjustments parity).
 final teamAdjustmentsProvider =
     FutureProvider.autoDispose<List<AdjustmentRequest>>((ref) async {
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
   if (uid == null) return const [];
-  return ref.read(attendanceRepositoryProvider).teamAdjustments();
+  final scope = await ref.watch(teamScopeProvider.future);
+  return ref.read(attendanceRepositoryProvider).teamAdjustments(
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
+      );
 });
 
 /// Month-range activity events for the full-activity timeline (Week/Month).

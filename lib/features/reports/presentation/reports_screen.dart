@@ -321,7 +321,6 @@ class _DailyTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final emp = ref.watch(reportEmployeeProvider);
     final perms = ref.watch(permissionsControllerProvider);
     final isVp = ref.watch(authControllerProvider.select((s) => s.isVp));
@@ -335,51 +334,168 @@ class _DailyTab extends ConsumerWidget {
     return ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: rows.length,
-      itemBuilder: (_, i) {
-        final r = rows[i];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('${r.name} · ${r.dateKey}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),),
-                    ),
-                    _StatusChip(status: r.status),
-                    if (canEdit)
-                      IconButton(
-                        tooltip: 'Edit attendance',
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => EditAttendanceScreen(record: r),
-                          ),
+      itemBuilder: (_, i) => _DailyCard(record: rows[i], canEdit: canEdit),
+    );
+  }
+}
+
+/// One daily attendance row — expandable to show each break/pause session
+/// (type, start → end, duration), mirroring the web BreakPauseDetailPanel.
+class _DailyCard extends ConsumerStatefulWidget {
+  const _DailyCard({required this.record, required this.canEdit});
+  final DailyRecord record;
+  final bool canEdit;
+  @override
+  ConsumerState<_DailyCard> createState() => _DailyCardState();
+}
+
+class _DailyCardState extends ConsumerState<_DailyCard> {
+  bool _expanded = false;
+  bool _loading = false;
+  List<({String dbId, String type, DateTime start, DateTime? end})>? _sessions;
+
+  Future<void> _toggle() async {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _sessions == null && !_loading) {
+      setState(() => _loading = true);
+      try {
+        final rows =
+            await ref.read(reportsRepositoryProvider).sessions(widget.record.id);
+        if (mounted) setState(() => _sessions = rows);
+      } catch (_) {
+        if (mounted) setState(() => _sessions = const []);
+      } finally {
+        if (mounted) setState(() => _loading = false);
+      }
+    }
+  }
+
+  String _dur(DateTime start, DateTime? end) {
+    final e = end ?? DateTime.now().toUtc();
+    final m = e.difference(start).inMinutes;
+    if (m <= 0) return '0m';
+    final h = m ~/ 60;
+    return h == 0 ? '${m}m' : '${h}h ${m % 60}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final r = widget.record;
+    final hasBreakOrPause = r.breakMinutes > 0 || r.pauseMinutes > 0;
+    return Card(
+      child: InkWell(
+        onTap: hasBreakOrPause ? _toggle : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('${r.name} · ${r.dateKey}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),),
+                  ),
+                  _StatusChip(status: r.status),
+                  if (widget.canEdit)
+                    IconButton(
+                      tooltip: 'Edit attendance',
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => EditAttendanceScreen(record: r),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${NptTime.formatTime(r.clockIn)} → '
-                  '${r.clockOut != null ? NptTime.formatTime(r.clockOut!) : 'now'}'
-                  '  ·  ${_n(r.netHours)}h net',
-                  style: theme.textTheme.bodySmall,
-                ),
-                Text(
-                  'Break ${r.breakMinutes}m · Pause ${r.pauseMinutes}m'
-                  '${r.isEdited ? ' · edited' : ''}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,),
-                ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${NptTime.formatTime(r.clockIn)} → '
+                '${r.clockOut != null ? NptTime.formatTime(r.clockOut!) : 'now'}'
+                '  ·  ${_n(r.netHours)}h net',
+                style: theme.textTheme.bodySmall,
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Break ${r.breakMinutes}m · Pause ${r.pauseMinutes}m'
+                      '${r.isEdited ? ' · edited' : ''}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,),
+                    ),
+                  ),
+                  if (hasBreakOrPause)
+                    Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 18, color: theme.colorScheme.onSurfaceVariant,),
+                ],
+              ),
+              if (_expanded) ...[
+                const Divider(height: 16),
+                if (_loading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),),
+                    ),
+                  )
+                else if ((_sessions ?? const []).isEmpty)
+                  // Legacy rows have totals only — show synthetic entries.
+                  Column(children: [
+                    if (r.breakMinutes > 0)
+                      _sessionTile(context, 'break', null, null, '${r.breakMinutes}m'),
+                    if (r.pauseMinutes > 0)
+                      _sessionTile(context, 'pause', null, null, '${r.pauseMinutes}m'),
+                  ],)
+                else
+                  Column(children: [
+                    for (final s in _sessions!)
+                      _sessionTile(context, s.type, s.start, s.end, _dur(s.start, s.end)),
+                  ],),
               ],
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  Widget _sessionTile(BuildContext context, String type, DateTime? start,
+      DateTime? end, String duration,) {
+    final theme = Theme.of(context);
+    final isBreak = type == 'break';
+    final color = isBreak ? Colors.orange.shade800 : Colors.blue.shade700;
+    final times = start != null
+        ? '${NptTime.formatTime(start)} → ${end != null ? NptTime.formatTime(end) : 'ongoing'}'
+        : 'no session detail';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(isBreak ? Icons.coffee_outlined : Icons.pause_circle_outline,
+            size: 16, color: color,),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(isBreak ? 'Break' : 'Pause',
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w600, color: color,),),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(times, style: theme.textTheme.bodySmall)),
+        Text(duration,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(fontWeight: FontWeight.w600),),
+      ],),
     );
   }
 }

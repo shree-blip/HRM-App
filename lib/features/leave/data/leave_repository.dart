@@ -35,15 +35,20 @@ class LeaveRepository {
         .toList();
   }
 
-  /// Requests from OTHER users that the current user can see (RLS scopes to
-  /// team for line managers/supervisors, org-wide for VP/Admin). Used by the
-  /// approval view; employee names resolved from profiles.
-  Future<List<LeaveRequest>> teamRequests() async {
-    final rows = await supabase
+  /// Requests from OTHER users for the approval view. Pass [scopeUserIds] to
+  /// limit a non-VP manager to their team (web useLeaveRequests
+  /// fetchPendingForManager / fetchAllTeamRequests); employee names resolved
+  /// from profiles.
+  Future<List<LeaveRequest>> teamRequests({List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
+    var query = supabase
         .from('leave_requests')
         .select(_cols)
-        .neq('user_id', _uid)
-        .order('created_at', ascending: false);
+        .neq('user_id', _uid);
+    if (scopeUserIds != null) {
+      query = query.inFilter('user_id', scopeUserIds);
+    }
+    final rows = await query.order('created_at', ascending: false);
     final list = (rows as List)
         .map((r) => LeaveRequest.fromMap((r as Map).cast<String, dynamic>()))
         .toList();

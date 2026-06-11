@@ -57,8 +57,17 @@ final recentTasksProvider =
 
 final recentLeaveProvider =
     FutureProvider.autoDispose<List<LeaveItem>>((ref) async {
-  ref.watch(authControllerProvider.select((s) => s.user?.id));
-  return ref.read(dashboardRepositoryProvider).recentLeave();
+  final auth = ref.watch(authControllerProvider);
+  if (auth.user == null) return const [];
+  // Non-VP managers see their team's requests only (+ their own), matching
+  // the web LeaveWidget; employees/VP keep the RLS scope.
+  final scope = await ref.watch(teamScopeProvider.future);
+  final leaveScope = (auth.isManager && !scope.orgWide)
+      ? [...scope.userIds, auth.user!.id]
+      : null;
+  return ref
+      .read(dashboardRepositoryProvider)
+      .recentLeave(scopeUserIds: leaveScope);
 });
 
 /// Daily timeline: milestones + deadlines + holidays in one bundle.

@@ -278,11 +278,13 @@ class AttendanceRepository {
     }
   }
 
-  /// Team adjustment requests visible to a manager/admin (RLS-scoped),
-  /// newest first, with requester names resolved.
-  Future<List<AdjustmentRequest>> teamAdjustments() async {
+  /// Team adjustment requests visible to a manager/admin, newest first, with
+  /// requester names resolved. Pass [scopeUserIds] to limit a non-VP manager
+  /// to their team (web useAttendanceAdjustments filters by requested_by).
+  Future<List<AdjustmentRequest>> teamAdjustments({List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
     final uid = supabase.auth.currentUser?.id;
-    final rows = await supabase
+    var query = supabase
         .from('attendance_adjustment_requests')
         .select(
           'id, attendance_log_id, requested_by, status, reason, '
@@ -291,8 +293,11 @@ class AttendanceRepository {
           'original_break_minutes, original_pause_minutes, reviewer_comment, '
           'override_status, created_at',
         )
-        .neq('requested_by', uid as Object)
-        .order('created_at', ascending: false);
+        .neq('requested_by', uid as Object);
+    if (scopeUserIds != null) {
+      query = query.inFilter('requested_by', scopeUserIds);
+    }
+    final rows = await query.order('created_at', ascending: false);
     final list = (rows as List)
         .map((r) => AdjustmentRequest.fromMap((r as Map).cast<String, dynamic>()))
         .toList();

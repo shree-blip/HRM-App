@@ -255,14 +255,19 @@ class DashboardRepository {
   }
 
   // ── LeaveWidget ────────────────────────────────────────
-  Future<List<LeaveItem>> recentLeave({int limit = 5}) async {
-    final rows = await supabase
+  /// Recent leave requests. Pass [scopeUserIds] to limit a non-VP manager to
+  /// their team (web LeaveWidget shows team requests for managers).
+  Future<List<LeaveItem>> recentLeave({int limit = 5, List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
+    var query = supabase
         .from('leave_requests')
         .select(
           'id, user_id, leave_type, start_date, end_date, days, status, is_half_day, created_at',
-        )
-        .order('created_at', ascending: false)
-        .limit(limit);
+        );
+    if (scopeUserIds != null) {
+      query = query.inFilter('user_id', scopeUserIds);
+    }
+    final rows = await query.order('created_at', ascending: false).limit(limit);
     final list =
         (rows as List).map((r) => (r as Map).cast<String, dynamic>()).toList();
 

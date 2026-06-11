@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/team/team_scope.dart';
 import 'leave_models.dart';
 import 'leave_repository.dart';
 
@@ -29,10 +30,14 @@ final annualRemainingProvider = FutureProvider.autoDispose<num>((ref) async {
   return 0;
 });
 
-/// Requests awaiting/handled for the approval view (RLS-scoped to team).
+/// Requests awaiting/handled for the approval view. VP/Admin org-wide; every
+/// other manager limited to their team (web useLeaveRequests parity).
 final teamLeaveRequestsProvider =
     FutureProvider.autoDispose<List<LeaveRequest>>((ref) async {
   final auth = ref.watch(authControllerProvider);
   if (auth.user == null) return const [];
-  return ref.read(leaveRepositoryProvider).teamRequests();
+  final scope = await ref.watch(teamScopeProvider.future);
+  return ref.read(leaveRepositoryProvider).teamRequests(
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
+      );
 });
