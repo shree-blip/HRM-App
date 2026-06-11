@@ -5,6 +5,7 @@ import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/permissions/permission.dart';
 import '../../../core/permissions/permissions_controller.dart';
+import '../../../core/team/team_scope.dart';
 import '../data/employee.dart';
 import '../data/employees_providers.dart';
 import 'employee_action_sheet.dart';
@@ -76,7 +77,29 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
               error: (e, _) => _ErrorView(
                 onRetry: () => ref.invalidate(employeesListProvider),
               ),
-              data: (all) => _buildList(context, all),
+              data: (all) {
+                // Web parity: only VP/Admin see the full directory; every
+                // other manager sees just their team; everyone else none.
+                final showFullDirectory = auth.isVp || auth.isAdmin;
+                if (showFullDirectory) return _buildList(context, all);
+                final isTeamManager =
+                    auth.isLineManager || auth.isSupervisor || auth.isManager;
+                if (!isTeamManager) return const _ColleaguesOnly();
+                final scopeAsync = ref.watch(teamScopeProvider);
+                return scopeAsync.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => _ErrorView(
+                    onRetry: () => ref.invalidate(teamScopeProvider),
+                  ),
+                  data: (scope) {
+                    final ids = scope.employeeIds.toSet();
+                    final team =
+                        all.where((e) => ids.contains(e.id)).toList();
+                    return _buildList(context, team);
+                  },
+                );
+              },
             ),
     );
   }
@@ -318,6 +341,37 @@ class _FilterDropdown extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Non-manager case — the web Employees page renders no list for users who
+/// are neither VP/Admin nor a team manager ("View your colleagues" header only).
+class _ColleaguesOnly extends StatelessWidget {
+  const _ColleaguesOnly();
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.groups_outlined,
+                size: 56, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),),
+            const SizedBox(height: 12),
+            Text('View your colleagues', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              'The employee directory is available to managers and administrators.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

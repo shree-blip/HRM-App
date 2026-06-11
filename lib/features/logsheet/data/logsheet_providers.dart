@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/team/team_scope.dart';
 import '../../../core/utils/attendance_time.dart';
 import 'log_models.dart';
 import 'logsheet_repository.dart';
@@ -24,17 +25,25 @@ final myLogsProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) {
   return ref.read(logSheetRepositoryProvider).myLogs(date);
 });
 
-final teamLogsProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) {
+final teamLogsProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) async {
   final date = ref.watch(selectedLogDateProvider);
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
-  if (uid == null) return Future.value(const []);
-  return ref.read(logSheetRepositoryProvider).teamLogs(date);
+  if (uid == null) return const [];
+  final scope = await ref.watch(teamScopeProvider.future);
+  return ref.read(logSheetRepositoryProvider).teamLogs(
+        date,
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
+      );
 });
 
-final liveLogsProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) {
+final liveLogsProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) async {
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
-  if (uid == null) return Future.value(const []);
-  return ref.read(logSheetRepositoryProvider).liveLogs(_todayKey());
+  if (uid == null) return const [];
+  final scope = await ref.watch(teamScopeProvider.future);
+  return ref.read(logSheetRepositoryProvider).liveLogs(
+        _todayKey(),
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
+      );
 });
 
 // ── Report tab ──────────────────────────────────────────
@@ -95,15 +104,17 @@ final reportEmployeesProvider = FutureProvider.autoDispose<List<LogEmployee>>(
   (ref) => ref.read(logSheetRepositoryProvider).employees(),
 );
 
-final logReportProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) {
+final logReportProvider = FutureProvider.autoDispose<List<WorkLog>>((ref) async {
   final f = ref.watch(appliedReportProvider);
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
-  if (uid == null || f == null) return Future.value(const []);
+  if (uid == null || f == null) return const [];
+  final scope = await ref.watch(teamScopeProvider.future);
   return ref.read(logSheetRepositoryProvider).reportLogs(
         start: f.start,
         end: f.end,
         clientId: f.clientId,
         employeeId: f.employeeId,
         department: f.department,
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
       );
 });

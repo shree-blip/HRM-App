@@ -135,22 +135,36 @@ class DashboardRepository {
     return (pending: pending, dueToday: dueToday);
   }
 
-  /// Pending leaves visible to the user (own for employees, team+own for
-  /// managers — RLS enforces the scope), plus who is on leave today.
-  Future<({int pending, List<String> onLeaveTodayNames})> leaveStats() async {
+  /// Pending leaves + who is on leave today. Pass [scopeUserIds] to limit a
+  /// non-VP manager to their team (web useLeaveRequests parity); null keeps
+  /// the RLS scope (own for employees, org-wide for VP/Admin).
+  Future<({int pending, List<String> onLeaveTodayNames})> leaveStats({
+    List<String>? scopeUserIds,
+  }) async {
     final today = _dateKey(_nowNpt());
+    if (scopeUserIds != null && scopeUserIds.isEmpty) {
+      return (pending: 0, onLeaveTodayNames: const <String>[]);
+    }
 
-    final pendingRows = await supabase
+    var pendingQuery = supabase
         .from('leave_requests')
         .select('id')
         .eq('status', 'pending');
+    if (scopeUserIds != null) {
+      pendingQuery = pendingQuery.inFilter('user_id', scopeUserIds);
+    }
+    final pendingRows = await pendingQuery;
 
-    final onLeaveRows = await supabase
+    var onLeaveQuery = supabase
         .from('leave_requests')
         .select('user_id, start_date, end_date')
         .eq('status', 'approved')
         .lte('start_date', today)
         .gte('end_date', today);
+    if (scopeUserIds != null) {
+      onLeaveQuery = onLeaveQuery.inFilter('user_id', scopeUserIds);
+    }
+    final onLeaveRows = await onLeaveQuery;
 
     final userIds = (onLeaveRows as List)
         .map((r) => (r as Map)['user_id'] as String?)
@@ -201,16 +215,18 @@ class DashboardRepository {
         .toList();
   }
 
-  /// Builds the stat-card summary in parallel.
+  /// Builds the stat-card summary in parallel. [leaveScopeUserIds] limits the
+  /// pending-leave stat to a non-VP manager's team (null = RLS scope).
   Future<DashboardSummary> summary({
     required String userId,
     required bool isManager,
+    List<String>? leaveScopeUserIds,
   }) async {
     final results = await Future.wait([
       isManager ? employeeCount() : Future.value(0),
       monthlyHours(userId),
       taskStats(),
-      leaveStats(),
+      leaveStats(scopeUserIds: leaveScopeUserIds),
     ]);
 
     final tasks = results[2] as ({int pending, int dueToday});

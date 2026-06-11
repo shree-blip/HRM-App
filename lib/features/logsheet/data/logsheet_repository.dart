@@ -101,25 +101,37 @@ class LogSheetRepository {
     return _map(rows);
   }
 
-  Future<List<WorkLog>> teamLogs(String date) async {
-    final rows = await supabase
+  /// Team logs for [date]. Pass [scopeUserIds] to limit to a manager's team
+  /// (web useWorkLogs.fetchTeamLogs: VP org-wide minus self, every other
+  /// manager .in(user_id, team)).
+  Future<List<WorkLog>> teamLogs(String date, {List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
+    var query = supabase
         .from('work_logs')
         .select(_teamCols)
         .eq('log_date', date)
-        .neq('user_id', _uid)
-        .order('created_at', ascending: false);
+        .neq('user_id', _uid);
+    if (scopeUserIds != null) {
+      query = query.inFilter('user_id', scopeUserIds);
+    }
+    final rows = await query.order('created_at', ascending: false);
     return _map(rows);
   }
 
-  Future<List<WorkLog>> liveLogs(String today) async {
-    final rows = await supabase
+  /// Live in-progress team logs (web TeamRealtimeDashboard scoping).
+  Future<List<WorkLog>> liveLogs(String today, {List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
+    var query = supabase
         .from('work_logs')
         .select(_teamCols)
         .eq('log_date', today)
         .eq('status', 'in_progress')
-        .neq('user_id', _uid)
-        .order('created_at', ascending: false)
-        .limit(20);
+        .neq('user_id', _uid);
+    if (scopeUserIds != null) {
+      query = query.inFilter('user_id', scopeUserIds);
+    }
+    final rows =
+        await query.order('created_at', ascending: false).limit(20);
     return _map(rows);
   }
 
@@ -129,7 +141,9 @@ class LogSheetRepository {
     String? clientId,
     String? employeeId,
     String? department,
+    List<String>? scopeUserIds,
   }) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
     // Paginate (1000/page) to bypass the default row cap, like the web report.
     const pageSize = 1000;
     final all = <WorkLog>[];
@@ -143,6 +157,7 @@ class LogSheetRepository {
       if (clientId != null) q = q.eq('client_id', clientId);
       if (employeeId != null) q = q.eq('employee_id', employeeId);
       if (department != null) q = q.eq('department', department);
+      if (scopeUserIds != null) q = q.inFilter('user_id', scopeUserIds);
       final rows = await q
           .order('log_date', ascending: false)
           .range(from, from + pageSize - 1);

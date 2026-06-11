@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/team/team_scope.dart';
 import 'dashboard_repository.dart';
 
 final dashboardRepositoryProvider =
@@ -21,9 +22,15 @@ final dashboardSummaryProvider = FutureProvider.autoDispose<DashboardSummary>(
         onLeaveTodayNames: [],
       );
     }
+    // Non-VP managers see team-scoped pending leave (web useLeaveRequests);
+    // employees and VP/Admin keep the RLS scope.
+    final scope = await ref.watch(teamScopeProvider.future);
+    final leaveScope =
+        (auth.isManager && !scope.orgWide) ? scope.userIds : null;
     return ref.read(dashboardRepositoryProvider).summary(
           userId: user.id,
           isManager: auth.isManager,
+          leaveScopeUserIds: leaveScope,
         );
   },
 );

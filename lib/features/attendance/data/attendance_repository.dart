@@ -96,14 +96,20 @@ class AttendanceRepository {
   }
 
   /// Team attendance for the current NPT month, aggregated per employee.
-  /// RLS scopes rows (VP/Admin: all; line managers: their reports).
-  Future<List<TeamMemberAttendance>> teamAttendance() async {
-    final rows = await supabase
+  /// Pass [scopeUserIds] to limit to a manager's team (web useTeamAttendance:
+  /// VP/Admin org-wide, every other manager .in(user_id, team)).
+  Future<List<TeamMemberAttendance>> teamAttendance({List<String>? scopeUserIds}) async {
+    if (scopeUserIds != null && scopeUserIds.isEmpty) return const [];
+    var query = supabase
         .from('attendance_logs')
         .select(
           'user_id, clock_in, clock_out, total_break_minutes, total_pause_minutes',
         )
         .gte('clock_in', NptTime.nptMonthStartUtc().toIso8601String());
+    if (scopeUserIds != null) {
+      query = query.inFilter('user_id', scopeUserIds);
+    }
+    final rows = await query;
 
     final logs = (rows as List).cast<Map>();
     final nowUtc = DateTime.now().toUtc();

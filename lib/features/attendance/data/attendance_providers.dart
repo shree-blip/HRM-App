@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/supabase/supabase_client.dart';
+import '../../../core/team/team_scope.dart';
 import 'adjustment_models.dart';
 import 'attendance_models.dart';
 import 'attendance_repository.dart';
@@ -171,12 +172,16 @@ final attendanceHistoryProvider =
   return ref.read(attendanceRepositoryProvider).monthLogs(uid);
 });
 
-/// Manager/admin team attendance (this month).
+/// Manager/admin team attendance (this month). VP/Admin org-wide; every other
+/// manager limited to their team (web useTeamAttendance parity).
 final teamAttendanceProvider =
     FutureProvider.autoDispose<List<TeamMemberAttendance>>((ref) async {
   final auth = ref.watch(authControllerProvider);
   if (auth.user == null || !auth.isManager) return const [];
-  return ref.read(attendanceRepositoryProvider).teamAttendance();
+  final scope = await ref.watch(teamScopeProvider.future);
+  return ref.read(attendanceRepositoryProvider).teamAttendance(
+        scopeUserIds: scope.orgWide ? null : scope.userIds,
+      );
 });
 
 final liveAttendanceRepositoryProvider =

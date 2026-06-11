@@ -2,21 +2,38 @@ import '../../../core/supabase/supabase_client.dart';
 import '../../../core/utils/attendance_time.dart';
 import 'reports_models.dart';
 
-/// Attendance Summary / Reports data access. Reads attendance_logs (RLS scopes
-/// to team for managers, org-wide for VP/Admin) + approved leave, aggregates
-/// per employee, and computes working days. No schema changes.
+/// Attendance Summary / Reports data access. Reads attendance_logs + approved
+/// leave, aggregates per employee, and computes working days. Pass
+/// [scopeUserIds] to limit to a manager's team (web useTeamAttendance:
+/// VP/Admin org-wide, every other manager .in(user_id, team)). No schema changes.
 class ReportsRepository {
-  Future<ReportData> fetch(ReportWindow w) async {
-    // 1. Attendance logs in the window.
-    final logRows = await supabase
+  Future<ReportData> fetch(ReportWindow w, {List<String>? scopeUserIds}) async {
+    final startKey = NptTime.nptDateKey(w.startUtc);
+    final endKeyIncl =
+        NptTime.nptDateKey(w.endUtc.subtract(const Duration(days: 1)));
+
+    // Team-scoped manager with no team members: empty report (web parity).
+    if (scopeUserIds != null && scopeUserIds.isEmpty) {
+      return ReportData(
+        summaries: const [],
+        daily: const [],
+        workingDays: await _workingDays(startKey, endKeyIncl),
+      );
+    }
+
+    // 1. Attendance logs in the window (team-filtered for scoped managers).
+    var logQuery = supabase
         .from('attendance_logs')
         .select(
           'id, user_id, clock_in, clock_out, total_break_minutes, '
           'total_pause_minutes, is_edited',
         )
         .gte('clock_in', w.startUtc.toIso8601String())
-        .lt('clock_in', w.endUtc.toIso8601String())
-        .order('clock_in', ascending: false);
+        .lt('clock_in', w.endUtc.toIso8601String());
+    if (scopeUserIds != null) {
+      logQuery = logQuery.inFilter('user_id', scopeUserIds);
+    }
+    final logRows = await logQuery.order('clock_in', ascending: false);
     final logs = (logRows as List).cast<Map>();
 
     // 2. Resolve names/emails for everyone referenced (logs + leave).
@@ -24,16 +41,17 @@ class ReportsRepository {
       for (final l in logs) if (l['user_id'] != null) l['user_id'] as String,
     };
 
-    // 3. Approved leave overlapping the window.
-    final startKey = NptTime.nptDateKey(w.startUtc);
-    final endKeyIncl =
-        NptTime.nptDateKey(w.endUtc.subtract(const Duration(days: 1)));
-    final leaveRows = await supabase
+    // 3. Approved leave overlapping the window (same team filter).
+    var leaveQuery = supabase
         .from('leave_requests')
         .select('user_id, start_date, end_date, days, reason, is_half_day')
         .eq('status', 'approved')
         .lte('start_date', endKeyIncl)
         .gte('end_date', startKey);
+    if (scopeUserIds != null) {
+      leaveQuery = leaveQuery.inFilter('user_id', scopeUserIds);
+    }
+    final leaveRows = await leaveQuery;
     final leaves = (leaveRows as List).cast<Map>();
     for (final lv in leaves) {
       if (lv['user_id'] != null) userIds.add(lv['user_id'] as String);
