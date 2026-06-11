@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -11,26 +14,43 @@ import 'logsheet_repository.dart';
 final logSheetRepositoryProvider =
     Provider<LogSheetRepository>((_) => LogSheetRepository());
 
-/// Realtime sync for the Log Sheet: any work_logs change (e.g. pausing or
-/// resuming from the web app) invalidates the log providers so the mobile
-/// view updates without a manual refresh. Watched by LogSheetScreen; the
-/// channel is torn down when the screen is disposed.
+/// Live sync for the Log Sheet while the screen is open:
+/// 1. realtime channel on work_logs (fast path — e.g. a pause done in the web
+///    app shows up immediately), and
+/// 2. a 10s poll as a guaranteed fallback (also keeps the live "paused"
+///    counter ticking) in case realtime events don't arrive on this network.
+/// Watched by LogSheetScreen; both are torn down when the screen closes.
 final logSheetRealtimeProvider = Provider.autoDispose<void>((ref) {
   final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
   if (uid == null) return;
+
+  void refreshAll() {
+    ref.invalidate(myLogsProvider);
+    ref.invalidate(teamLogsProvider);
+    ref.invalidate(liveLogsProvider);
+  }
+
   final channel = supabase.channel('work-logs-sync-$uid')
     ..onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'work_logs',
-      callback: (_) {
-        ref.invalidate(myLogsProvider);
-        ref.invalidate(teamLogsProvider);
-        ref.invalidate(liveLogsProvider);
+      callback: (payload) {
+        debugPrint('[logsheet] realtime work_logs event: ${payload.eventType}');
+        refreshAll();
       },
     )
-    ..subscribe();
-  ref.onDispose(() => supabase.removeChannel(channel));
+    ..subscribe((status, error) {
+      debugPrint('[logsheet] realtime channel status: $status'
+          '${error != null ? ' error: $error' : ''}');
+    });
+
+  final poll = Timer.periodic(const Duration(seconds: 10), (_) => refreshAll());
+
+  ref.onDispose(() {
+    poll.cancel();
+    supabase.removeChannel(channel);
+  });
 });
 
 String _todayKey() => NptTime.nptDateKey(DateTime.now().toUtc());
