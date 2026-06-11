@@ -164,27 +164,34 @@ class DocumentsRepository {
     });
   }
 
-  /// Bulk-create Drive-link documents. Like the web (useDocuments
-  /// sendDocumentNotifications), the email side-effect fires ONCE per logical
-  /// action — not once per file — and never blocks the upload.
+  /// Bulk-create Drive-link documents, then notify ONCE per unique
+  /// (category + employeeId) combination — exact parity with the web
+  /// createDriveDocumentsBulk dedup loop. So a manager uploading Compliance
+  /// for several employees sends one email per employee; multi-row Policies
+  /// (no employee) collapse to a single email. Never blocks the upload.
   Future<void> createDriveDocumentsBulk(
     List<DriveDocItem> items, {
-    bool managerUpload = false,
+    bool isManagerOrAbove = false,
   }) async {
     for (final item in items) {
       await _createOne(item);
     }
-    if (items.isNotEmpty) {
-      await _sendUploadNotification(items.first, managerUpload: managerUpload);
+    final seen = <String>{};
+    for (final item in items) {
+      final key = '${item.category}::${item.employeeId ?? ''}';
+      if (!seen.add(key)) continue;
+      await _sendUploadNotification(item, isManagerOrAbove: isManagerOrAbove);
     }
   }
 
   /// Email side-effect — same edge function + payload as the web's
-  /// send-document-upload-notification call. Best-effort: failures are
+  /// send-document-upload-notification call. The manager_upload branch fires
+  /// when this item targets an employee AND the uploader is manager-or-above
+  /// (web's isManagerUploadingForEmployee). Best-effort: failures are
   /// swallowed exactly like the web's try/catch.
   Future<void> _sendUploadNotification(
     DriveDocItem item, {
-    required bool managerUpload,
+    required bool isManagerOrAbove,
   }) async {
     try {
       final uploader = await supabase
@@ -196,7 +203,9 @@ class DocumentsRepository {
           '${uploader['first_name'] ?? ''} ${uploader['last_name'] ?? ''}'.trim();
       final uploaderEmail = (uploader['email'] ?? '') as String;
 
-      if (managerUpload && item.employeeId != null) {
+      final managerUploadingForEmployee =
+          item.employeeId != null && isManagerOrAbove;
+      if (managerUploadingForEmployee) {
         final emp = await supabase
             .from('employees')
             .select('first_name, last_name')

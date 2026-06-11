@@ -169,12 +169,12 @@ class _DocumentFormState extends ConsumerState<_DocumentForm> {
     });
     final nav = Navigator.of(context);
     try {
-      // managerUpload mirrors the web's isManagerUploadingForEmployee flag
-      // (manager-or-above uploading a doc assigned to an employee).
+      // The repo decides manager_upload vs employee_upload per item (web's
+      // isManagerUploadingForEmployee = item has employee AND uploader is
+      // manager-or-above), so we only pass the uploader's role here.
       await ref.read(documentsRepositoryProvider).createDriveDocumentsBulk(
             items,
-            managerUpload:
-                _managerOrAbove && items.any((i) => i.employeeId != null),
+            isManagerOrAbove: _managerOrAbove,
           );
       ref.invalidate(documentsProvider);
       nav.pop(true);
