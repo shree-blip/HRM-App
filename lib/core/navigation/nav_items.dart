@@ -158,17 +158,8 @@ const List<NavItem> kNavItems = [
     permissions: [Permission.viewOnboarding],
     hideIfHas: [Permission.manageOnboarding],
   ),
-  NavItem(
-    label: 'Payroll',
-    icon: Icons.account_balance_wallet_outlined,
-    route: '/payroll',
-    permissions: [
-      Permission.managePayroll,
-      Permission.viewPayroll,
-      Permission.viewPayslips,
-    ],
-    phase: 8,
-  ),
+  // Payroll & My Payslips are intentionally excluded from the mobile app —
+  // no nav item and no route.
   NavItem(
     label: 'Loans',
     icon: Icons.account_balance_outlined,
@@ -202,9 +193,7 @@ const List<NavItem> kNavItems = [
 ];
 
 /// Routes that the dashboard's stat cards / drawer may navigate to but which
-/// are not yet implemented — used to title the placeholder screen.
-const Map<String, ({String title, int phase})> kPlaceholderRoutes = {
-  // '/employees' (Phase 3), '/attendance' (Phase 4), '/leave' (Phase 5),
-  // '/approvals' (Phase 6) are real screens.
-  '/payroll': (title: 'Payroll', phase: 8),
-};
+/// are not yet implemented — used to title the placeholder screen. Empty now:
+/// every working web page is implemented; Payroll/Payslips are intentionally
+/// excluded from mobile and Performance is Coming Soon on the web too.
+const Map<String, ({String title, int phase})> kPlaceholderRoutes = {};
