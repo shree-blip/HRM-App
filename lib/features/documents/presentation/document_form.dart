@@ -169,7 +169,13 @@ class _DocumentFormState extends ConsumerState<_DocumentForm> {
     });
     final nav = Navigator.of(context);
     try {
-      await ref.read(documentsRepositoryProvider).createDriveDocumentsBulk(items);
+      // managerUpload mirrors the web's isManagerUploadingForEmployee flag
+      // (manager-or-above uploading a doc assigned to an employee).
+      await ref.read(documentsRepositoryProvider).createDriveDocumentsBulk(
+            items,
+            managerUpload:
+                _managerOrAbove && items.any((i) => i.employeeId != null),
+          );
       ref.invalidate(documentsProvider);
       nav.pop(true);
     } catch (e) {

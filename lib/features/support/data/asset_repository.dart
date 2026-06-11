@@ -75,6 +75,46 @@ class AssetRepository {
       'line_manager_approved_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', req.id);
     await _notify(req.userId, 'Your asset request was approved by your manager and sent to admin.');
+    // Email to admin — same edge function + payload as the web
+    // useAssetRequests lineManagerApprove; best-effort like the web.
+    try {
+      final requester = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', req.userId)
+          .maybeSingle();
+      final requesterEmail = (requester?['email'] ?? '') as String;
+      String? department;
+      if (requesterEmail.isNotEmpty) {
+        final emp = await supabase
+            .from('employees')
+            .select('department')
+            .eq('email', requesterEmail)
+            .maybeSingle();
+        department = emp?['department'] as String?;
+      }
+      final lm = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('user_id', _uid)
+          .maybeSingle();
+      await supabase.functions.invoke('send-asset-approval-email', body: {
+        'requestId': req.id,
+        'requestTitle': req.title,
+        'requestType': req.requestType,
+        'requestDescription': req.description,
+        'requestDate': req.createdAt?.toIso8601String(),
+        'employeeName': req.requesterName ??
+            '${requester?['first_name'] ?? ''} ${requester?['last_name'] ?? ''}'
+                .trim(),
+        'employeeEmail': requesterEmail,
+        'department': department,
+        'lineManagerName': lm != null
+            ? '${lm['first_name'] ?? ''} ${lm['last_name'] ?? ''}'.trim()
+            : 'Line Manager',
+        'approvalDate': DateTime.now().toUtc().toIso8601String(),
+      },);
+    } catch (_) {}
   }
 
   /// Admin/VP final approval.

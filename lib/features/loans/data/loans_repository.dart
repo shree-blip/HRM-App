@@ -95,6 +95,26 @@ class LoansRepository {
       await _notify(target, '💰 Loan Request',
           'A loan request for $amount needs your review.',);
     }
+    // Email to VP — same edge function + payload as the web useLoans
+    // submitLoan; best-effort like the web's try/catch.
+    try {
+      final prof = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', _uid)
+          .single();
+      final empName =
+          '${prof['first_name'] ?? ''} ${prof['last_name'] ?? ''}'.trim();
+      await supabase.functions.invoke('send-loan-notification', body: {
+        'event_type': 'submitted',
+        'employee_name': empName.isEmpty ? 'An employee' : empName,
+        'employee_email': (prof['email'] ?? '') as String,
+        'amount': amount,
+        'term_months': termMonths,
+        'emi': double.parse(emi.toStringAsFixed(2)),
+        'reason_type': reasonType,
+      },);
+    } catch (_) {}
   }
 
   // ── Manager review ────────────────────────────────────
@@ -132,6 +152,38 @@ class LoansRepository {
     await _logApproval(loan.id, 'vp_review', approved ? 'approved' : 'rejected', comment);
     await _notify(loan.userId, '💰 Loan Update',
         approved ? 'Your loan was approved and is ready to disburse.' : 'Your loan was rejected.',);
+    // Email to the employee — same edge function + payload as the web
+    // useLoans vpDecision; best-effort like the web's try/catch.
+    try {
+      final emp = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', loan.userId)
+          .single();
+      final email = (emp['email'] ?? '') as String;
+      if (email.isNotEmpty) {
+        final vp = await supabase
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('user_id', _uid)
+            .maybeSingle();
+        final vpName = vp != null
+            ? '${vp['first_name'] ?? ''} ${vp['last_name'] ?? ''}'.trim()
+            : 'VP';
+        await supabase.functions.invoke('send-loan-notification', body: {
+          'event_type': approved ? 'approved' : 'rejected',
+          'employee_name':
+              '${emp['first_name'] ?? ''} ${emp['last_name'] ?? ''}'.trim(),
+          'employee_email': email,
+          'amount': loan.amount,
+          'term_months': loan.termMonths,
+          'emi': loan.estimatedMonthlyInstallment,
+          'reason_type': loan.reasonType,
+          'comment': comment,
+          'vp_name': vpName,
+        },);
+      }
+    } catch (_) {}
   }
 
   Future<void> disburse(LoanRequest loan) async {

@@ -47,6 +47,8 @@ final timeTrackerProvider =
 class TimeTrackerController extends Notifier<TimeTrackerState> {
   AttendanceRepository get _repo => ref.read(attendanceRepositoryProvider);
   RealtimeChannel? _channel;
+  Timer? _reminderTimer;
+  String? _reminderSentLogId;
   String? _userId;
 
   @override
@@ -59,7 +61,47 @@ class TimeTrackerController extends Notifier<TimeTrackerState> {
     }
     _userId = uid;
     Future.microtask(() => _init(uid));
+    _reminderTimer ??=
+        Timer.periodic(const Duration(seconds: 60), (_) => _checkWorkDuration());
     return const TimeTrackerState(loading: true);
+  }
+
+  /// 8-hour work reminder — exact port of the web useAttendance check:
+  /// every 60s, once per open log, skipped while on break/paused; at 470
+  /// net minutes send the in-app notification + the reminder edge function.
+  Future<void> _checkWorkDuration() async {
+    final log = state.openLog;
+    final uid = _userId;
+    if (log == null || uid == null) {
+      _reminderSentLogId = null;
+      return;
+    }
+    if (_reminderSentLogId == log.id) return;
+    if (log.clockStatus != ClockStatus.active) return;
+
+    final now = DateTime.now().toUtc();
+    final netMs = now.difference(log.clockIn).inMilliseconds -
+        (log.totalBreakMinutes + log.totalPauseMinutes) * 60 * 1000;
+    const thresholdMs = 470 * 60 * 1000;
+    if (netMs < thresholdMs) return;
+
+    _reminderSentLogId = log.id;
+    try {
+      await supabase.rpc('create_notification', params: {
+        'p_user_id': uid,
+        'p_title': '⏰ 8-Hour Work Reminder',
+        'p_message':
+            "You've been working for nearly 8 hours. Don't forget to clock out in the next 10 minutes!",
+        'p_type': 'attendance',
+        'p_link': '/attendance',
+      },);
+    } catch (_) {}
+    try {
+      await supabase.functions.invoke('send-attendance-reminder', body: {
+        'source': 'client',
+        'user_id': uid,
+      },);
+    } catch (_) {}
   }
 
   Future<void> _init(String uid) async {
@@ -99,6 +141,9 @@ class TimeTrackerController extends Notifier<TimeTrackerState> {
   }
 
   void _teardown() {
+    _reminderTimer?.cancel();
+    _reminderTimer = null;
+    _reminderSentLogId = null;
     if (_channel != null) {
       supabase.removeChannel(_channel!);
       _channel = null;

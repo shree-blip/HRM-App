@@ -513,6 +513,7 @@ class EmployeesRepository {
         }
       }
     } catch (_) {}
+    await _sendTeamAssignmentEmail(managerId, memberId);
   }
 
   /// Remove a member: delete junction row + clear legacy columns pointing here.
@@ -536,6 +537,50 @@ class EmployeesRepository {
           await supabase.from('employees').update(updates).eq('id', memberId);
         }
       }
+    } catch (_) {}
+    await _sendTeamAssignmentEmail(managerId, memberId, action: 'removed');
+  }
+
+  /// Email to the affected employee — same edge function + payload as the
+  /// web (AddToTeamDialog / Employees.tsx remove flow). Best-effort.
+  Future<void> _sendTeamAssignmentEmail(
+    String managerId,
+    String memberId, {
+    String? action,
+  }) async {
+    try {
+      final uid = supabase.auth.currentUser?.id;
+      if (uid == null) return;
+      final assigner = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', uid)
+          .maybeSingle();
+      final member = await supabase
+          .from('employees')
+          .select('first_name, last_name, email')
+          .eq('id', memberId)
+          .maybeSingle();
+      final manager = await supabase
+          .from('employees')
+          .select('first_name, last_name')
+          .eq('id', managerId)
+          .maybeSingle();
+      if (member == null) return;
+      final assignerName = assigner != null
+          ? '${assigner['first_name'] ?? ''} ${assigner['last_name'] ?? ''}'.trim()
+          : 'Executive';
+      await supabase.functions.invoke('send-team-assignment-notification', body: {
+        if (action != null) 'action': action,
+        'assigner_name': assignerName.isEmpty ? 'Executive' : assignerName,
+        'assigner_email': (assigner?['email'] ?? '') as String,
+        'employee_name':
+            '${member['first_name'] ?? ''} ${member['last_name'] ?? ''}'.trim(),
+        'employee_email': (member['email'] ?? '') as String,
+        'manager_name': manager != null
+            ? '${manager['first_name'] ?? ''} ${manager['last_name'] ?? ''}'.trim()
+            : 'your manager',
+      },);
     } catch (_) {}
   }
 

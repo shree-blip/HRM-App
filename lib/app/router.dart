@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -45,6 +46,33 @@ class Routes {
 }
 
 const _publicRoutes = {Routes.auth, Routes.forgotPassword};
+
+/// Android back-button guard for authenticated top-level routes. The system
+/// back must never reveal the auth screen after login: from any drawer
+/// destination back returns to the Dashboard; from the Dashboard it leaves
+/// the app. Pushed sub-routes (detail screens, dialogs) still pop normally
+/// because they sit above this route in the navigator.
+class _RootBackGuard extends StatelessWidget {
+  const _RootBackGuard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final loc = GoRouterState.of(context).matchedLocation;
+        if (loc == Routes.dashboard) {
+          SystemNavigator.pop();
+        } else {
+          context.go(Routes.dashboard);
+        }
+      },
+      child: child,
+    );
+  }
+}
 
 /// GoRouter wired to the auth state. The router instance is stable; auth
 /// changes trigger a redirect via [refreshListenable].
@@ -94,12 +122,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.dashboard,
-        builder: (_, __) => const DashboardScreen(),
+        builder: (_, __) => const _RootBackGuard(child: DashboardScreen()),
       ),
       // Employee Management (Phase 3) — list + read-only detail.
       GoRoute(
         path: '/employees',
-        builder: (_, __) => const EmployeesScreen(),
+        builder: (_, __) => const _RootBackGuard(child: EmployeesScreen()),
         routes: [
           GoRoute(
             path: ':id',
@@ -113,102 +141,102 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Attendance (Phase 4).
       GoRoute(
         path: '/attendance',
-        builder: (_, __) => const AttendanceScreen(),
+        builder: (_, __) => const _RootBackGuard(child: AttendanceScreen()),
       ),
       // Leave (Phase 5).
       GoRoute(
         path: '/leave',
-        builder: (_, __) => const LeaveScreen(),
+        builder: (_, __) => const _RootBackGuard(child: LeaveScreen()),
       ),
       // Approvals (Phase 6).
       GoRoute(
         path: '/approvals',
-        builder: (_, __) => const ApprovalsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: ApprovalsScreen()),
       ),
       // Reports (Phase 7).
       GoRoute(
         path: '/reports',
-        builder: (_, __) => const ReportsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: ReportsScreen()),
       ),
       // Log Sheet (Phase 8).
       GoRoute(
         path: '/log-sheet',
-        builder: (_, __) => const LogSheetScreen(),
+        builder: (_, __) => const _RootBackGuard(child: LogSheetScreen()),
       ),
       // Documents (Phase 9).
       GoRoute(
         path: '/documents',
-        builder: (_, __) => const DocumentsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: DocumentsScreen()),
       ),
       // Support, Bugs & Grievances (Phase 10).
       GoRoute(
         path: '/support',
-        builder: (_, __) => const SupportScreen(),
+        builder: (_, __) => const _RootBackGuard(child: SupportScreen()),
       ),
       // Loans, Invoices, Announcements (Phase 11).
       GoRoute(
         path: '/loans',
-        builder: (_, __) => const LoansScreen(),
+        builder: (_, __) => const _RootBackGuard(child: LoansScreen()),
       ),
       GoRoute(
         path: '/invoices',
-        builder: (_, __) => const InvoicesScreen(),
+        builder: (_, __) => const _RootBackGuard(child: InvoicesScreen()),
       ),
       GoRoute(
         path: '/announcements',
-        builder: (_, __) => const AnnouncementsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: AnnouncementsScreen()),
       ),
       // Calendar + Profile (Phase 12).
       GoRoute(
         path: '/calendar',
-        builder: (_, __) => const CalendarScreen(),
+        builder: (_, __) => const _RootBackGuard(child: CalendarScreen()),
       ),
       // Notifications (Critical Fix 2).
       GoRoute(
         path: '/notifications',
-        builder: (_, __) => const NotificationsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: NotificationsScreen()),
       ),
       // Tasks (Critical Fix 3).
       GoRoute(
         path: '/tasks',
-        builder: (_, __) => const TasksScreen(),
+        builder: (_, __) => const _RootBackGuard(child: TasksScreen()),
       ),
       // Settings.
       GoRoute(
         path: '/settings',
-        builder: (_, __) => const SettingsScreen(),
+        builder: (_, __) => const _RootBackGuard(child: SettingsScreen()),
       ),
       // Access Control.
       GoRoute(
         path: '/access-control',
-        builder: (_, __) => const AccessControlScreen(),
+        builder: (_, __) => const _RootBackGuard(child: AccessControlScreen()),
       ),
       // Onboarding / Offboarding.
       GoRoute(
         path: '/onboarding',
-        builder: (_, __) => const OnboardingScreen(),
+        builder: (_, __) => const _RootBackGuard(child: OnboardingScreen()),
       ),
       GoRoute(
         path: '/my-onboarding',
-        builder: (_, __) => const MyOnboardingScreen(),
+        builder: (_, __) => const _RootBackGuard(child: MyOnboardingScreen()),
       ),
       GoRoute(
         path: '/my-offboarding',
-        builder: (_, __) => const MyOffboardingScreen(),
+        builder: (_, __) => const _RootBackGuard(child: MyOffboardingScreen()),
       ),
       // Hiring.
       GoRoute(
         path: '/hiring',
-        builder: (_, __) => const HiringScreen(),
+        builder: (_, __) => const _RootBackGuard(child: HiringScreen()),
       ),
       // Timezone Management.
       GoRoute(
         path: '/timezone-management',
-        builder: (_, __) => const TimezoneScreen(),
+        builder: (_, __) => const _RootBackGuard(child: TimezoneScreen()),
       ),
       GoRoute(
         path: '/profile',
-        builder: (_, __) => const ProfileScreen(),
+        builder: (_, __) => const _RootBackGuard(child: ProfileScreen()),
       ),
       // Placeholder routes for modules that ship in later phases. Keeps the
       // drawer + dashboard links functional without dead-ends.

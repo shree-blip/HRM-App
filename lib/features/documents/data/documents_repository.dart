@@ -164,10 +164,69 @@ class DocumentsRepository {
     });
   }
 
-  /// Bulk-create Drive-link documents (notifications are disabled in web).
-  Future<void> createDriveDocumentsBulk(List<DriveDocItem> items) async {
+  /// Bulk-create Drive-link documents. Like the web (useDocuments
+  /// sendDocumentNotifications), the email side-effect fires ONCE per logical
+  /// action — not once per file — and never blocks the upload.
+  Future<void> createDriveDocumentsBulk(
+    List<DriveDocItem> items, {
+    bool managerUpload = false,
+  }) async {
     for (final item in items) {
       await _createOne(item);
+    }
+    if (items.isNotEmpty) {
+      await _sendUploadNotification(items.first, managerUpload: managerUpload);
+    }
+  }
+
+  /// Email side-effect — same edge function + payload as the web's
+  /// send-document-upload-notification call. Best-effort: failures are
+  /// swallowed exactly like the web's try/catch.
+  Future<void> _sendUploadNotification(
+    DriveDocItem item, {
+    required bool managerUpload,
+  }) async {
+    try {
+      final uploader = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', _uid)
+          .single();
+      final uploaderName =
+          '${uploader['first_name'] ?? ''} ${uploader['last_name'] ?? ''}'.trim();
+      final uploaderEmail = (uploader['email'] ?? '') as String;
+
+      if (managerUpload && item.employeeId != null) {
+        final emp = await supabase
+            .from('employees')
+            .select('first_name, last_name')
+            .eq('id', item.employeeId!)
+            .maybeSingle();
+        final employeeName = emp != null
+            ? '${emp['first_name'] ?? ''} ${emp['last_name'] ?? ''}'.trim()
+            : 'Employee';
+        await supabase.functions.invoke('send-document-upload-notification', body: {
+          'uploader_name': uploaderName.isEmpty ? 'User' : uploaderName,
+          'uploader_email': uploaderEmail,
+          'document_name': item.name,
+          'document_category': item.category,
+          'employee_id': item.employeeId,
+          'employee_name': employeeName,
+          'notify_type': 'manager_upload',
+        },);
+      } else {
+        final userEmployeeId = await myEmployeeId();
+        await supabase.functions.invoke('send-document-upload-notification', body: {
+          'uploader_name': uploaderName.isEmpty ? 'User' : uploaderName,
+          'uploader_email': uploaderEmail,
+          'document_name': item.name,
+          'document_category': item.category,
+          'employee_id': userEmployeeId,
+          'notify_type': 'employee_upload',
+        },);
+      }
+    } catch (_) {
+      // Best-effort; the upload itself already succeeded.
     }
   }
 
