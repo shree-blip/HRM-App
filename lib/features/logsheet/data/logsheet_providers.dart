@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/supabase/supabase_client.dart';
 import '../../../core/team/team_scope.dart';
 import '../../../core/utils/attendance_time.dart';
 import 'log_models.dart';
@@ -8,6 +10,28 @@ import 'logsheet_repository.dart';
 
 final logSheetRepositoryProvider =
     Provider<LogSheetRepository>((_) => LogSheetRepository());
+
+/// Realtime sync for the Log Sheet: any work_logs change (e.g. pausing or
+/// resuming from the web app) invalidates the log providers so the mobile
+/// view updates without a manual refresh. Watched by LogSheetScreen; the
+/// channel is torn down when the screen is disposed.
+final logSheetRealtimeProvider = Provider.autoDispose<void>((ref) {
+  final uid = ref.watch(authControllerProvider.select((s) => s.user?.id));
+  if (uid == null) return;
+  final channel = supabase.channel('work-logs-sync-$uid')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'work_logs',
+      callback: (_) {
+        ref.invalidate(myLogsProvider);
+        ref.invalidate(teamLogsProvider);
+        ref.invalidate(liveLogsProvider);
+      },
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
 
 String _todayKey() => NptTime.nptDateKey(DateTime.now().toUtc());
 

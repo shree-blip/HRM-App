@@ -264,40 +264,59 @@ class LogSheetRepository {
     await supabase.from('work_logs').update(update).eq('id', old.id);
   }
 
+  /// Re-fetch the current DB row before computing pause/complete updates —
+  /// the local model may be stale (e.g. the log was paused from the web app),
+  /// which corrupted pause totals. Mirrors the web pauseLog/resumeLog, which
+  /// always select the fresh row first.
+  Future<WorkLog> _fresh(WorkLog log) async {
+    try {
+      final row = await supabase
+          .from('work_logs')
+          .select(_logCols)
+          .eq('id', log.id)
+          .maybeSingle();
+      if (row != null) return WorkLog.fromMap(row.cast<String, dynamic>());
+    } catch (_) {}
+    return log;
+  }
+
   Future<void> pauseLog(WorkLog log) async {
+    final fresh = await _fresh(log);
     final update = {
       'status': 'on_hold',
       'pause_start': DateTime.now().toUtc().toIso8601String(),
     };
-    await _writeHistory(log, update);
-    await supabase.from('work_logs').update(update).eq('id', log.id);
+    await _writeHistory(fresh, update);
+    await supabase.from('work_logs').update(update).eq('id', fresh.id);
   }
 
   Future<void> resumeLog(WorkLog log) async {
-    final addMin = log.pauseStart != null
-        ? DateTime.now().toUtc().difference(log.pauseStart!).inMinutes.clamp(0, 1 << 31)
+    final fresh = await _fresh(log);
+    final addMin = fresh.pauseStart != null
+        ? DateTime.now().toUtc().difference(fresh.pauseStart!).inMinutes.clamp(0, 1 << 31)
         : 0;
     final update = {
       'status': 'in_progress',
       'pause_end': DateTime.now().toUtc().toIso8601String(),
-      'total_pause_minutes': log.totalPauseMinutes + addMin,
+      'total_pause_minutes': fresh.totalPauseMinutes + addMin,
       'end_time': null,
     };
-    await _writeHistory(log, update);
-    await supabase.from('work_logs').update(update).eq('id', log.id);
+    await _writeHistory(fresh, update);
+    await supabase.from('work_logs').update(update).eq('id', fresh.id);
   }
 
   Future<void> completeLog(WorkLog log) async {
+    final fresh = await _fresh(log);
     final end = _nowHm();
-    final mins = (minutesBetween(log.startTime, end) - log.totalPauseMinutes)
+    final mins = (minutesBetween(fresh.startTime, end) - fresh.totalPauseMinutes)
         .clamp(0, 1 << 31);
     final update = {
       'status': 'completed',
       'end_time': end,
       'time_spent_minutes': mins,
     };
-    await _writeHistory(log, update);
-    await supabase.from('work_logs').update(update).eq('id', log.id);
+    await _writeHistory(fresh, update);
+    await supabase.from('work_logs').update(update).eq('id', fresh.id);
   }
 
   Future<void> deleteLog(String id) async {

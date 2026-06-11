@@ -22,6 +22,8 @@ class LogSheetScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final canTeam = auth.isManager || auth.isVp || auth.isLineManager || auth.isAdmin;
+    // Live-sync work_logs changes (e.g. pause/resume done on the web app).
+    ref.watch(logSheetRealtimeProvider);
 
     final tabs = <Tab>[
       const Tab(text: 'My Log'),
@@ -918,6 +920,15 @@ class _LogCard extends ConsumerWidget {
                 if (log.clientName != null) _meta(theme, Icons.business, log.clientCode != null ? '${log.clientName} (${log.clientCode})' : log.clientName!),
                 if (log.department != null) _meta(theme, Icons.category_outlined, departmentLabel(log.department)),
                 _meta(theme, Icons.timer_outlined, formatMinutes(log.timeSpentMinutes)),
+                // Pause total (web: "⏸ Xm paused"); while on hold, include
+                // the ongoing pause so the total is live.
+                if (log.totalPauseMinutes > 0 ||
+                    (log.isOnHold && log.pauseStart != null))
+                  _meta(
+                    theme,
+                    Icons.pause_circle_outline,
+                    '${formatMinutes(log.totalPauseMinutes + ((log.isOnHold && log.pauseStart != null) ? DateTime.now().toUtc().difference(log.pauseStart!).inMinutes.clamp(0, 1 << 31) : 0))} paused',
+                  ),
                 if (log.startTime != null)
                   _meta(theme, Icons.schedule, '${log.startTime}${log.endTime != null ? ' – ${log.endTime}' : ''}'),
               ],
