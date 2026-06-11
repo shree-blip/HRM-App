@@ -19,7 +19,6 @@ class TimeClockCard extends ConsumerStatefulWidget {
 
 class _TimeClockCardState extends ConsumerState<TimeClockCard> {
   Timer? _ticker;
-  String _clockType = 'payroll';
 
   @override
   void initState() {
@@ -135,23 +134,32 @@ class _TimeClockCardState extends ConsumerState<TimeClockCard> {
       case ClockStatus.out:
         return Column(
           children: [
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'payroll', label: Text('Payroll')),
-                ButtonSegment(value: 'billable', label: Text('Billable')),
+            // Web parity: the clock-type picker offers only "Payroll Time"
+            // (billable was removed in hrm-update).
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.work_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,),
+                const SizedBox(width: 6),
+                Text('Payroll Time',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),),
               ],
-              selected: {_clockType},
-              onSelectionChanged: (s) => setState(() => _clockType = s.first),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    icon: const Icon(Icons.business),
-                    label: const Text('Clock In · Office'),
+                    icon: const Icon(Icons.business, size: 18),
+                    label: const FittedBox(
+                        fit: BoxFit.scaleDown, child: Text('Clock In · Office'),),
                     onPressed: () => _guard(() => notifier.clockIn(
-                          clockType: _clockType,
+                          clockType: 'payroll',
                           workMode: 'wfo',
                         ),),
                   ),
@@ -159,10 +167,11 @@ class _TimeClockCardState extends ConsumerState<TimeClockCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.home_outlined),
-                    label: const Text('Clock In · Home'),
+                    icon: const Icon(Icons.home_outlined, size: 18),
+                    label: const FittedBox(
+                        fit: BoxFit.scaleDown, child: Text('Clock In · Home'),),
                     onPressed: () => _guard(() => notifier.clockIn(
-                          clockType: _clockType,
+                          clockType: 'payroll',
                           workMode: 'wfh',
                         ),),
                   ),
@@ -177,27 +186,37 @@ class _TimeClockCardState extends ConsumerState<TimeClockCard> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                icon: const Icon(Icons.coffee_outlined),
-                label: const Text('Break'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.coffee_outlined, size: 18),
+                label: const FittedBox(
+                    fit: BoxFit.scaleDown, child: Text('Break'),),
                 onPressed: () => _guard(notifier.startBreak),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: OutlinedButton.icon(
-                icon: const Icon(Icons.pause),
-                label: const Text('Pause'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.pause, size: 18),
+                label: const FittedBox(
+                    fit: BoxFit.scaleDown, child: Text('Pause'),),
                 onPressed: () => _guard(notifier.startPause),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.error,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                 ),
-                icon: const Icon(Icons.logout),
-                label: const Text('Out'),
+                icon: const Icon(Icons.logout, size: 18),
+                label: const FittedBox(
+                    fit: BoxFit.scaleDown, child: Text('Out'),),
                 onPressed: () => _confirmClockOut(notifier),
               ),
             ),

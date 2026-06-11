@@ -16,7 +16,6 @@ import 'widgets/daily_timeline_card.dart';
 import 'widgets/leave_balances_card.dart';
 import 'widgets/leave_requests_card.dart';
 import 'widgets/personal_report_card.dart';
-import 'widgets/placeholder_widget_card.dart';
 import 'widgets/stat_card.dart';
 import 'widgets/tasks_card.dart';
 import 'widgets/team_report_card.dart';
@@ -92,15 +91,8 @@ class DashboardScreen extends ConsumerWidget {
             if (isManager) const TeamReportCard() else const PersonalReportCard(),
             const SizedBox(height: 16),
 
-            // Personal performance chart — Phase 4/7.
-            const PlaceholderWidgetCard(
-              icon: Icons.show_chart,
-              title: 'Performance Chart',
-              subtitle: 'Daily hours vs target trend',
-              phase: 7,
-              route: '/reports',
-            ),
-            const SizedBox(height: 16),
+            // Performance chart intentionally omitted — Performance is
+            // Coming Soon on the web; revisit when the web ships it.
 
             const DailyTimelineCard(),
             const SizedBox(height: 16),

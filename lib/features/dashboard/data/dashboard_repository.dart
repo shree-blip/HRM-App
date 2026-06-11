@@ -243,15 +243,48 @@ class DashboardRepository {
   }
 
   // ── TasksWidget ────────────────────────────────────────
+  /// The current user's recent tasks — created by them OR assigned to them,
+  /// matching the web TasksWidget (useTasks visibility). Never other teams'.
   Future<List<TaskItem>> recentTasks({int limit = 4}) async {
-    final rows = await supabase
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return const [];
+
+    final assignedRows = await supabase
+        .from('task_assignees')
+        .select('task_id')
+        .eq('user_id', uid);
+    final assignedIds = (assignedRows as List)
+        .map((r) => (r as Map)['task_id'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    const cols = 'id, title, client_name, priority, status, due_date, created_at';
+    final created = await supabase
         .from('tasks')
-        .select('id, title, client_name, priority, status, due_date, created_at')
+        .select(cols)
+        .eq('created_by', uid)
         .order('created_at', ascending: false)
         .limit(limit);
-    return (rows as List)
-        .map((r) => TaskItem.fromMap((r as Map).cast<String, dynamic>()))
-        .toList();
+
+    var assigned = const <dynamic>[];
+    if (assignedIds.isNotEmpty) {
+      assigned = await supabase
+          .from('tasks')
+          .select(cols)
+          .inFilter('id', assignedIds.toList())
+          .order('created_at', ascending: false)
+          .limit(limit);
+    }
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final r in [...created as List, ...assigned]) {
+      final m = (r as Map).cast<String, dynamic>();
+      byId[m['id'] as String] = m;
+    }
+    final merged = byId.values.toList()
+      ..sort((a, b) =>
+          ((b['created_at'] ?? '') as String).compareTo((a['created_at'] ?? '') as String),);
+    return merged.take(limit).map(TaskItem.fromMap).toList();
   }
 
   // ── LeaveWidget ────────────────────────────────────────
@@ -403,8 +436,12 @@ class DashboardRepository {
       }
     }
 
-    final managers = <String>[];
-    var teammateCount = 0;
+    // Managers + teammates with names/roles — exact port of the web
+    // PersonalReportsWidget (team_members junction; teammates are the other
+    // members under the same managers). Uses employee_directory so every
+    // employee can read names regardless of their employees-table RLS.
+    final managers = <PersonRef>[];
+    final teammates = <PersonRef>[];
     try {
       final empId =
           await supabase.rpc('get_employee_id_for_user', params: {'_user_id': userId});
@@ -419,25 +456,33 @@ class DashboardRepository {
             .toSet()
             .toList();
         if (mgrIds.isNotEmpty) {
-          final emps = await supabase
-              .from('employees')
-              .select('first_name, last_name')
-              .inFilter('id', mgrIds);
-          for (final e in emps as List) {
-            final m = e as Map;
-            final n = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
-            if (n.isNotEmpty) managers.add(n);
-          }
-          final mates = await supabase
+          final mateIdRows = await supabase
               .from('team_members')
               .select('member_employee_id')
               .inFilter('manager_employee_id', mgrIds);
-          final mateIds = (mates as List)
+          final mateIds = (mateIdRows as List)
               .map((r) => (r as Map)['member_employee_id'] as String?)
               .whereType<String>()
               .toSet()
             ..remove(empId);
-          teammateCount = mateIds.length;
+
+          final people = await supabase
+              .from('employee_directory')
+              .select('id, first_name, last_name, job_title')
+              .inFilter('id', [...mgrIds, ...mateIds])
+              .order('first_name', ascending: true);
+          for (final e in people as List) {
+            final m = e as Map;
+            final id = m['id'] as String?;
+            final n = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+            if (id == null || n.isEmpty) continue;
+            final p = PersonRef(name: n, jobTitle: m['job_title'] as String?);
+            if (mgrIds.contains(id)) {
+              managers.add(p);
+            } else if (mateIds.contains(id)) {
+              teammates.add(p);
+            }
+          }
         }
       }
     } catch (_) {
@@ -448,8 +493,8 @@ class DashboardRepository {
       monthlyHours: hours,
       targetHours: target,
       annual: annual,
-      managerNames: managers,
-      teammateCount: teammateCount,
+      managers: managers,
+      teammates: teammates,
     );
   }
 
@@ -603,20 +648,27 @@ class HolidayItem {
   final int daysUntil;
 }
 
+/// A person reference for the summary card (name + optional role).
+class PersonRef {
+  const PersonRef({required this.name, this.jobTitle});
+  final String name;
+  final String? jobTitle;
+}
+
 class PersonalReport {
   const PersonalReport({
     required this.monthlyHours,
     required this.targetHours,
     required this.annual,
-    required this.managerNames,
-    required this.teammateCount,
+    required this.managers,
+    required this.teammates,
   });
 
   final double monthlyHours;
   final double targetHours;
   final LeaveBalanceItem? annual;
-  final List<String> managerNames;
-  final int teammateCount;
+  final List<PersonRef> managers;
+  final List<PersonRef> teammates;
 
   double get progress =>
       targetHours <= 0 ? 0 : (monthlyHours / targetHours).clamp(0, 1).toDouble();
