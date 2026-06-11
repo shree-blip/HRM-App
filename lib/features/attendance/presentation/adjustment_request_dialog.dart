@@ -5,9 +5,11 @@ import '../../../core/utils/attendance_time.dart';
 import '../data/attendance_models.dart';
 import '../data/attendance_providers.dart';
 
-/// Employee-initiated attendance correction request (feature B). Proposes new
-/// clock in/out + break/pause minutes with a required reason; writes to
-/// attendance_adjustment_requests and notifies the manager. No schema change.
+/// Employee-initiated attendance correction request. Proposes new clock in/out
+/// and — like the web AdjustmentRequestDialog — shows the log's actual break/
+/// pause sessions as editable start/end rows; the proposed break/pause minute
+/// totals are derived from those sessions. Sessions themselves are read-only
+/// (only the proposed totals are submitted). No schema change.
 Future<bool?> showAdjustmentRequestDialog(
   BuildContext context,
   WidgetRef ref,
@@ -19,19 +21,25 @@ Future<bool?> showAdjustmentRequestDialog(
   );
 }
 
-class _AdjustmentDialog extends ConsumerStatefulWidget {
-  const _AdjustmentDialog({required this.log});
-  final AttendanceLog log;
+/// One editable session row (NPT wall-clock times).
+class _EditableSession {
+  _EditableSession({required this.type, required this.start, this.end});
+  final String type; // break | pause
+  DateTime start;
+  DateTime? end;
 
-  @override
-  ConsumerState<_AdjustmentDialog> createState() => _AdjustmentDialogState();
+  int get minutes {
+    if (end == null) return 0;
+    final m = end!.difference(start).inMinutes;
+    return m > 0 ? m : 0;
+  }
 }
 
 class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
   late DateTime _clockInNpt; // NPT wall-clock components
   late DateTime _clockOutNpt;
-  late final TextEditingController _break;
-  late final TextEditingController _pause;
+  final List<_EditableSession> _sessions = [];
+  bool _sessionsLoading = true;
   final _reason = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -43,17 +51,54 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
     super.initState();
     _clockInNpt = widget.log.clockIn.add(_off);
     _clockOutNpt = (widget.log.clockOut ?? DateTime.now().toUtc()).add(_off);
-    _break = TextEditingController(text: '${widget.log.totalBreakMinutes}');
-    _pause = TextEditingController(text: '${widget.log.totalPauseMinutes}');
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    try {
+      final rows = await ref
+          .read(attendanceRepositoryProvider)
+          .breakSessions(widget.log.id);
+      for (final s in rows) {
+        _sessions.add(_EditableSession(
+          type: s.sessionType,
+          start: s.startTime.add(_off),
+          end: s.endTime?.add(_off),
+        ),);
+      }
+    } catch (_) {}
+    // Legacy fallback — synthesize rows from the single-record fields when no
+    // per-session rows exist (mirrors the web dialog).
+    if (_sessions.isEmpty) {
+      final log = widget.log;
+      if (log.breakStart != null && log.totalBreakMinutes > 0) {
+        _sessions.add(_EditableSession(
+          type: 'break',
+          start: log.breakStart!.add(_off),
+          end: log.breakEnd?.add(_off),
+        ),);
+      }
+      if (log.pauseStart != null && log.totalPauseMinutes > 0) {
+        _sessions.add(_EditableSession(
+          type: 'pause',
+          start: log.pauseStart!.add(_off),
+          end: log.pauseEnd?.add(_off),
+        ),);
+      }
+    }
+    if (mounted) setState(() => _sessionsLoading = false);
   }
 
   @override
   void dispose() {
-    _break.dispose();
-    _pause.dispose();
     _reason.dispose();
     super.dispose();
   }
+
+  int get _breakTotal =>
+      _sessions.where((s) => s.type == 'break').fold(0, (a, s) => a + s.minutes);
+  int get _pauseTotal =>
+      _sessions.where((s) => s.type == 'pause').fold(0, (a, s) => a + s.minutes);
 
   String _fmt(DateTime nptWall) {
     const months = [
@@ -67,28 +112,51 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
         '$h:${nptWall.minute.toString().padLeft(2, '0')} $ap';
   }
 
-  Future<void> _pick(bool isIn) async {
-    final current = isIn ? _clockInNpt : _clockOutNpt;
+  String _fmtTime(DateTime? nptWall) {
+    if (nptWall == null) return 'ongoing';
+    var h = nptWall.hour % 12;
+    if (h == 0) h = 12;
+    final ap = nptWall.hour < 12 ? 'AM' : 'PM';
+    return '$h:${nptWall.minute.toString().padLeft(2, '0')} $ap';
+  }
+
+  Future<DateTime?> _pickDateTime(DateTime current) async {
     final date = await showDatePicker(
       context: context,
       initialDate: current,
       firstDate: DateTime(current.year - 1),
       lastDate: DateTime(current.year + 1),
     );
-    if (date == null || !mounted) return;
+    if (date == null || !mounted) return null;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
     );
-    if (time == null) return;
-    final picked = DateTime.utc(
-      date.year, date.month, date.day, time.hour, time.minute,
-    );
+    if (time == null) return null;
+    return DateTime.utc(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _pick(bool isIn) async {
+    final picked = await _pickDateTime(isIn ? _clockInNpt : _clockOutNpt);
+    if (picked == null) return;
     setState(() {
       if (isIn) {
         _clockInNpt = picked;
       } else {
         _clockOutNpt = picked;
+      }
+    });
+  }
+
+  Future<void> _pickSession(_EditableSession s, bool isStart) async {
+    final picked =
+        await _pickDateTime(isStart ? s.start : (s.end ?? s.start));
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        s.start = picked;
+      } else {
+        s.end = picked;
       }
     });
   }
@@ -123,8 +191,8 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
             originalPauseMinutes: widget.log.totalPauseMinutes,
             proposedClockIn: inUtc,
             proposedClockOut: outUtc,
-            proposedBreakMinutes: int.tryParse(_break.text.trim()) ?? 0,
-            proposedPauseMinutes: int.tryParse(_pause.text.trim()) ?? 0,
+            proposedBreakMinutes: _breakTotal,
+            proposedPauseMinutes: _pauseTotal,
             reason: reason,
           );
       ref.invalidate(myAdjustmentsProvider);
@@ -157,34 +225,62 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
             const SizedBox(height: 8),
             _timeRow('Proposed clock-out', _fmt(_clockOutNpt), () => _pick(false)),
             const SizedBox(height: 12),
+            // ── Break & Pause sessions (web parity) ──
             Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _break,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Break (min)', isDense: true,),
-                  ),
+                  child: Text('BREAK & PAUSE SESSIONS',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          letterSpacing: 0.5,),),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _pause,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Pause (min)', isDense: true,),
-                  ),
-                ),
+                Text('${_breakTotal}m break · ${_pauseTotal}m pause',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(fontWeight: FontWeight.w600),),
               ],
             ),
+            const SizedBox(height: 6),
+            if (_sessionsLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),),
+                ),
+              )
+            else if (_sessions.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('No break or pause sessions recorded for this log.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+              )
+            else
+              Column(children: [for (final s in _sessions) _sessionRow(s)]),
+            if (!_sessionsLoading && _sessions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  "Tap a session's start/end to correct it — totals recalculate automatically.",
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontSize: 11),
+                ),
+              ),
             const SizedBox(height: 12),
             TextField(
               controller: _reason,
               maxLines: 3,
               decoration: const InputDecoration(
                 labelText: 'Reason *',
-                hintText: 'Why does this need correcting?',
+                hintText: 'e.g., Forgot to end break, actual break ended at 1:30 PM',
               ),
             ),
             if (_error != null) ...[
@@ -213,6 +309,62 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
     );
   }
 
+  Widget _sessionRow(_EditableSession s) {
+    final theme = Theme.of(context);
+    final isBreak = s.type == 'break';
+    final color = isBreak ? Colors.orange.shade800 : Colors.blue.shade700;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(isBreak ? Icons.coffee_outlined : Icons.pause_circle_outline,
+              size: 16, color: color,),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(isBreak ? 'Break' : 'Pause',
+                style: TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w600, color: color,),),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: () => _pickSession(s, true),
+                  child: Text(_fmtTime(s.start),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,),),
+                ),
+                const Text(' → '),
+                InkWell(
+                  onTap: () => _pickSession(s, false),
+                  child: Text(_fmtTime(s.end),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,),),
+                ),
+              ],
+            ),
+          ),
+          Text('${s.minutes}m',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600),),
+        ],
+      ),
+    );
+  }
+
   Widget _timeRow(String label, String value, VoidCallback onEdit) {
     final theme = Theme.of(context);
     return Row(
@@ -237,4 +389,12 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
       ],
     );
   }
+}
+
+class _AdjustmentDialog extends ConsumerStatefulWidget {
+  const _AdjustmentDialog({required this.log});
+  final AttendanceLog log;
+
+  @override
+  ConsumerState<_AdjustmentDialog> createState() => _AdjustmentDialogState();
 }
