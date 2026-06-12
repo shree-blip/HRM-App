@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/shell/app_drawer.dart';
+import '../../../core/auth/auth_controller.dart';
 import '../../attendance/data/attendance_providers.dart';
 import '../../leave/data/leave_providers.dart';
+import '../../leave/presentation/admin_leave_dialog.dart';
 import '../../leave/presentation/widgets/leave_approvals_view.dart';
 import '../../support/data/asset_providers.dart';
 import 'asset_approvals_view.dart';
@@ -18,11 +20,29 @@ class ApprovalsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    final canAssignLeave = auth.isAdmin || auth.isVp;
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Approvals'),
+          actions: [
+            if (canAssignLeave)
+              IconButton(
+                tooltip: 'Assign leave (Admin)',
+                icon: const Icon(Icons.person_add_alt_1_outlined),
+                onPressed: () async {
+                  final ok = await showAdminLeaveDialog(context);
+                  if (ok == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Leave assigned and auto-approved.'),),
+                    );
+                  }
+                },
+              ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Leave'),

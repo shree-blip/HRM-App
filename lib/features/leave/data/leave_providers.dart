@@ -30,6 +30,13 @@ final annualRemainingProvider = FutureProvider.autoDispose<num>((ref) async {
   return 0;
 });
 
+/// Employees an admin/VP can assign leave to (AdminLeaveDialog employee list).
+final assignableEmployeesProvider =
+    FutureProvider.autoDispose<List<({String userId, String name})>>((ref) async {
+  ref.watch(authControllerProvider.select((s) => s.user?.id));
+  return ref.read(leaveRepositoryProvider).assignableEmployees();
+});
+
 /// Requests awaiting/handled for the approval view. VP/Admin org-wide; every
 /// other manager limited to their team (web useLeaveRequests parity).
 final teamLeaveRequestsProvider =

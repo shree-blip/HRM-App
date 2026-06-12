@@ -134,6 +134,91 @@ class LeaveRepository {
     await _notifyEmployee(req, approved: false, reason: reason);
   }
 
+  /// Employees an admin can assign leave to — every profile with an auth
+  /// account, ordered by first name (web AdminLeaveDialog.fetchEmployees).
+  Future<List<({String userId, String name})>> assignableEmployees() async {
+    final rows = await supabase
+        .from('profiles')
+        .select('user_id, first_name, last_name')
+        .not('user_id', 'is', null)
+        .order('first_name', ascending: true);
+    return (rows as List)
+        .map((r) {
+          final m = r as Map;
+          return (
+            userId: (m['user_id'] ?? '') as String,
+            name: '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
+          );
+        })
+        .where((e) => e.userId.isNotEmpty)
+        .toList();
+  }
+
+  /// Admin/VP assigns leave on behalf of an employee — auto-approved. Mirrors
+  /// the web adminCreateLeave: inserts an approved leave_requests row with the
+  /// "[Admin assigned] " reason prefix (balance deduction is handled by the
+  /// auto_deduct_leave_balance DB trigger, NOT the client), then emails the
+  /// employee via send-leave-notification (event_type admin_assigned).
+  Future<void> adminCreateLeave({
+    required String targetUserId,
+    required String leaveType,
+    required String startDate, // YYYY-MM-DD
+    required String endDate, // YYYY-MM-DD
+    required double days,
+    required String reason,
+    required bool isHalfDay,
+    String? halfDayPeriod,
+  }) async {
+    await supabase.from('leave_requests').insert({
+      'user_id': targetUserId,
+      'leave_type': leaveType,
+      'start_date': startDate,
+      'end_date': endDate,
+      'days': days,
+      'reason': '[Admin assigned] $reason',
+      'status': 'approved',
+      'approved_by': _uid,
+      'approved_at': DateTime.now().toUtc().toIso8601String(),
+      'is_half_day': isHalfDay,
+      'half_day_period': halfDayPeriod,
+    });
+    // Email — same edge function + payload as the web adminCreateLeave.
+    try {
+      final admin = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('user_id', _uid)
+          .maybeSingle();
+      final adminName = admin != null
+          ? '${admin['first_name'] ?? ''} ${admin['last_name'] ?? ''}'.trim()
+          : 'Admin';
+      final emp = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+      final employeeName = emp != null
+          ? '${emp['first_name'] ?? ''} ${emp['last_name'] ?? ''}'.trim()
+          : 'Employee';
+      final employeeEmail = (emp?['email'] ?? '') as String;
+      await supabase.functions.invoke('send-leave-notification', body: {
+        'leave_request_id': 'admin-assigned',
+        'event_type': 'admin_assigned',
+        'employee_name': employeeName,
+        'employee_email': employeeEmail,
+        'admin_name': adminName.isEmpty ? 'Admin' : adminName,
+        'leave_type': leaveType,
+        'start_date': startDate,
+        'end_date': endDate,
+        'days': days,
+        'reason': reason,
+        'target_user_ids': [targetUserId],
+        'target_emails': [if (employeeEmail.isNotEmpty) employeeEmail],
+        'requesting_user_id': _uid,
+      },);
+    } catch (_) {}
+  }
+
   Future<void> _notifyEmployee(
     LeaveRequest req, {
     required bool approved,
