@@ -302,7 +302,8 @@ class _LiveAttendanceCardState extends ConsumerState<LiveAttendanceCard> {
 
   Widget _activityFeed(BuildContext context, LiveData d) {
     final theme = Theme.of(context);
-    final events = d.events.where((e) => e.name.trim().isNotEmpty).toList();
+    // Web recentActivities parity: name filter + 2-min future cutoff + DESC.
+    final events = d.recentActivities;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

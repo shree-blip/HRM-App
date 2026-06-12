@@ -59,6 +59,22 @@ class LiveData {
   final int paused;
   final int out;
 
+  /// Recent Activity feed — exact port of the web recentActivities memo:
+  /// keep only events with a real name, drop clearly future-dated timestamps
+  /// (2-minute clock-skew tolerance, so edited/future clock-outs don't bubble
+  /// to the top), sorted newest first.
+  List<LiveEvent> get recentActivities {
+    final futureCutoff = DateTime.now().toUtc().add(const Duration(minutes: 2));
+    final list = events
+        .where((e) =>
+            e.name.trim().isNotEmpty &&
+            e.name != 'Unknown' &&
+            !e.time.isAfter(futureCutoff),)
+        .toList()
+      ..sort((a, b) => b.time.compareTo(a.time));
+    return list;
+  }
+
   static const empty = LiveData(
     employees: [],
     events: [],
