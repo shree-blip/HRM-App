@@ -205,16 +205,43 @@ class _AttendanceApprovalsViewState
               ],
             ),
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Reject'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Approve'),
+            // One clean responsive row: Approve + Reject on the left,
+            // Cancel on the right. Compact buttons so nothing overflows on
+            // narrow screens.
+            SizedBox(
+              width: double.maxFinite,
+              child: Row(
+                children: [
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Approve'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Reject'),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
             ),
           ],
         );

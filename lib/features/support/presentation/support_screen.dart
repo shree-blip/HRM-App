@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
@@ -240,22 +241,92 @@ class _GrievancesTab extends ConsumerWidget {
         error: (e, _) => _Err('$e'),
         data: (items) {
           final list = items.where((g) => g.title.toLowerCase().contains(q)).toList();
-          if (list.isEmpty) return const _Empty('No grievances.');
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
             children: [
-              for (final g in list)
-                _Card(
-                  title: g.title,
-                  badge: _Badge(grievanceStatusLabel(g.status), grievanceStatusColors(g.status)),
-                  trailing: g.priority != null ? _Badge(g.priority!, priorityColors(g.priority)) : null,
-                  meta: '${g.category ?? '—'} · ${g.displayName(viewerUid: auth.user!.id, isAdmin: auth.isAdmin, isVp: auth.isVp)}',
-                  subtitle: g.details,
-                  onTap: () => _showGrievanceDetail(context, ref, g, isManager),
-                ),
+              const _GoogleFormBanner(),
+              if (list.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: Text('No grievances.')),
+                )
+              else
+                for (final g in list)
+                  _Card(
+                    title: g.title,
+                    badge: _Badge(grievanceStatusLabel(g.status), grievanceStatusColors(g.status)),
+                    trailing: g.priority != null ? _Badge(g.priority!, priorityColors(g.priority)) : null,
+                    meta: '${g.category ?? '—'} · ${g.displayName(viewerUid: auth.user!.id, isAdmin: auth.isAdmin, isVp: auth.isVp)}',
+                    subtitle: g.details,
+                    onTap: () => _showGrievanceDetail(context, ref, g, isManager),
+                  ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Embedded Grievance Google Form. The banner sits above the grievance list
+/// (clearly labeled as a Google Form, separate from the native form); tapping
+/// it opens the form in a full-height in-app WebView sheet.
+const _kGrievanceGoogleFormUrl =
+    'https://docs.google.com/forms/d/e/1FAIpQLSfERST8abuzNCQUbqNuhVIARAqRhnjqIp3P300pMTXfwDRKEQ/viewform?embedded=true';
+
+class _GoogleFormBanner extends StatelessWidget {
+  const _GoogleFormBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.primary.withValues(alpha: 0.06),
+      child: ListTile(
+        leading: Icon(Icons.assignment_outlined, color: theme.colorScheme.primary),
+        title: const Text('Grievance Google Form',
+            style: TextStyle(fontWeight: FontWeight.w600),),
+        subtitle: const Text('Fill the official Google Form (opens in-app)'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _openGoogleFormSheet(context),
+      ),
+    );
+  }
+
+  void _openGoogleFormSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.9,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(children: [
+                Icon(Icons.assignment_outlined,
+                    size: 18, color: Theme.of(ctx).colorScheme.primary,),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Grievance Google Form',
+                      style: Theme.of(ctx).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),),
+                ),
+              ],),
+            ),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: WebViewWidget(
+                  controller: WebViewController()
+                    ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                    ..loadRequest(Uri.parse(_kGrievanceGoogleFormUrl)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -305,11 +376,6 @@ void _showBugScreenshots(
     ),
   );
 }
-
-// TODO(grievance-google-form): the web GrievanceSection embeds a Google Form.
-// Planned for a later phase — when enabled, embed this URL in a WebView inside
-// the grievance flow. DO NOT show it in the app yet.
-// https://docs.google.com/forms/d/e/1FAIpQLSfERST8abuzNCQUbqNuhVIARAqRhnjqIp3P300pMTXfwDRKEQ/viewform?embedded=true
 
 void _showGrievanceForm(BuildContext context, WidgetRef ref) {
   final title = TextEditingController();
