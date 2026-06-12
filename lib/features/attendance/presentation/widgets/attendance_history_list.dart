@@ -48,8 +48,17 @@ class _HistoryTile extends ConsumerWidget {
     final net = log.netHours();
     final hoursText =
         net == net.roundToDouble() ? '${net.toInt()}h' : '${net.toStringAsFixed(1)}h';
+    // Night shift = clock-in and clock-out fall on different work dates
+    // (web isNightShift -> 🌙 marker on the row).
+    final inNpt = log.clockIn.add(NptTime.offset);
+    final outNpt = log.clockOut?.add(NptTime.offset);
+    final nightShift = outNpt != null &&
+        (inNpt.year != outNpt.year ||
+            inNpt.month != outNpt.month ||
+            inNpt.day != outNpt.day);
     final range =
-        '${NptTime.formatTime(log.clockIn)} → ${log.clockOut != null ? NptTime.formatTime(log.clockOut!) : 'now'}';
+        '${NptTime.formatTime(log.clockIn)} → ${log.clockOut != null ? NptTime.formatTime(log.clockOut!) : 'now'}'
+        '${nightShift ? ' 🌙' : ''}';
     final totalBreaks = log.totalBreakMinutes + log.totalPauseMinutes;
 
     return Card(

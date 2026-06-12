@@ -13,6 +13,8 @@ class AnnouncementsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canManage = canManageAnnouncements(ref);
+    // Live refresh on announcements changes (web shared realtime channel).
+    ref.watch(announcementsRealtimeProvider);
     return DefaultTabController(
       length: 2,
       child: Scaffold(

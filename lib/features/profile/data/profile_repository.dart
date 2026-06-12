@@ -46,6 +46,83 @@ class ProfileRepository {
       'joining_date': (joiningDate == null || joiningDate.isEmpty) ? null : joiningDate,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('user_id', _uid);
+    await _notifyProfileUpdated('${firstName.trim()} ${lastName.trim()}'.trim());
+  }
+
+  /// In-app notifications on profile save — exact web Profile.tsx behavior:
+  /// confirmation to self + "review if required" copy to direct managers and
+  /// all Admin/VP users (excluding self). Best-effort.
+  Future<void> _notifyProfileUpdated(String empName) async {
+    try {
+      await supabase.rpc('create_notification', params: {
+        'p_user_id': _uid,
+        'p_title': '✅ Profile Updated',
+        'p_message': 'Your profile has been updated successfully.',
+        'p_type': 'success',
+        'p_link': '/profile',
+      },);
+
+      final targets = <String>{};
+      // Direct managers (team_members -> manager employees -> auth user ids).
+      try {
+        final empId = await supabase
+            .rpc('get_employee_id_for_user', params: {'_user_id': _uid});
+        if (empId is String) {
+          final tm = await supabase
+              .from('team_members')
+              .select('manager_employee_id')
+              .eq('member_employee_id', empId);
+          final mgrEmpIds = (tm as List)
+              .map((r) => (r as Map)['manager_employee_id'] as String?)
+              .whereType<String>()
+              .toList();
+          if (mgrEmpIds.isNotEmpty) {
+            final emps = await supabase
+                .from('employees')
+                .select('profile_id')
+                .inFilter('id', mgrEmpIds);
+            final profileIds = (emps as List)
+                .map((r) => (r as Map)['profile_id'] as String?)
+                .whereType<String>()
+                .toList();
+            if (profileIds.isNotEmpty) {
+              final profs = await supabase
+                  .from('profiles')
+                  .select('user_id')
+                  .inFilter('id', profileIds);
+              for (final p in profs as List) {
+                final u = (p as Map)['user_id'] as String?;
+                if (u != null) targets.add(u);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      // Admin/VP users.
+      try {
+        final roles = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .inFilter('role', ['vp', 'admin']);
+        for (final r in roles as List) {
+          final u = (r as Map)['user_id'] as String?;
+          if (u != null) targets.add(u);
+        }
+      } catch (_) {}
+      targets.remove(_uid);
+      for (final t in targets) {
+        await supabase.rpc('create_notification', params: {
+          'p_user_id': t,
+          'p_title': '👤 Employee Profile Updated',
+          'p_message':
+              '$empName has updated their profile. Please review if required.',
+          'p_type': 'info',
+          'p_link': '/employees',
+        },);
+      }
+    } catch (_) {
+      // Best-effort; the profile save itself already succeeded.
+    }
   }
 
   Future<void> removeAvatar(String? path) async {

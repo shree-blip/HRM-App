@@ -60,6 +60,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           final today = DateTime.now();
           final upcoming = entries.where((e) => !e.date.isBefore(DateTime(today.year, today.month, today.day))).take(20).toList();
           final selEntries = _selected != null ? (byDay[_key(_selected!)] ?? const []) : const <CalendarEntry>[];
+          // Milestones for the displayed month (grid markers + selected-day).
+          final monthMilestones = _monthMilestones(
+              ref.watch(milestoneProfilesProvider).valueOrNull ?? const [],);
+          final milestoneDays = {for (final m in monthMilestones) m.date.day};
+          final selMilestones = _selected != null &&
+                  _selected!.month == _month.month &&
+                  _selected!.year == _month.year
+              ? monthMilestones
+                  .where((m) => m.date.day == _selected!.day)
+                  .toList()
+              : const <({String name, String type, DateTime date, int? years})>[];
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -71,17 +82,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               children: [
                 _monthHeader(),
                 const SizedBox(height: 8),
-                _grid(byDay),
+                _grid(byDay, milestoneDays),
                 const SizedBox(height: 8),
                 _legend(),
                 const Divider(height: 24),
                 if (_selected != null) ...[
                   Text(_fmtLong(_selected!), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  if (selEntries.isEmpty)
+                  if (selEntries.isEmpty && selMilestones.isEmpty)
                     Text('No events on this day.', style: Theme.of(context).textTheme.bodySmall)
-                  else
+                  else ...[
                     for (final e in selEntries) _entryTile(e, canManage),
+                    // Selected-day milestones (web selectedMilestones).
+                    if (selMilestones.isNotEmpty) _milestoneList(selMilestones),
+                  ],
                   const Divider(height: 24),
                 ],
                 // Tab strip — web CompanyCalendar tabs (Upcoming / Holidays /
@@ -241,7 +255,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _grid(Map<String, List<CalendarEntry>> byDay) {
+  Widget _grid(Map<String, List<CalendarEntry>> byDay, Set<int> milestoneDays) {
     final theme = Theme.of(context);
     final firstWeekday = DateTime(_month.year, _month.month, 1).weekday % 7; // Sun=0
     final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
@@ -282,6 +296,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       width: 5, height: 5,
                       margin: const EdgeInsets.symmetric(horizontal: 1),
                       decoration: BoxDecoration(color: calendarTypeColors(t).$2, shape: BoxShape.circle),
+                    ),
+                  // Milestone marker (web milestone day modifier).
+                  if (milestoneDays.contains(day))
+                    Container(
+                      width: 5, height: 5,
+                      margin: const EdgeInsets.symmetric(horizontal: 1),
+                      decoration: const BoxDecoration(
+                          color: Color(0xFFD97706), shape: BoxShape.circle,),
                     ),
                 ],
               ),

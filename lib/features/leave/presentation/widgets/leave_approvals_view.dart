@@ -27,6 +27,8 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
 
   @override
   Widget build(BuildContext context) {
+    // Live refresh on leave_requests changes (web "leave-changes" channel).
+    ref.watch(leaveRealtimeProvider);
     final async = ref.watch(teamLeaveRequestsProvider);
     return RefreshIndicator(
       onRefresh: () async {

@@ -15,6 +15,8 @@ class LeaveScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Live refresh on leave_requests changes (web "leave-changes" channel).
+    ref.watch(leaveRealtimeProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Leave'),
