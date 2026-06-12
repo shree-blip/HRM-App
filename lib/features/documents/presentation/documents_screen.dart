@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -9,6 +10,9 @@ import '../data/document_models.dart';
 import '../data/documents_providers.dart';
 import '../data/drive_links.dart';
 import 'document_form.dart';
+
+/// Categories that use the web's employee-first drill-down view.
+bool _isEmployeeFirstCategory(String c) => c == 'Contracts' || c == 'Compliance';
 
 /// Documents (Phase 9 + hrm-update parity): Google Drive link documents with
 /// per-category bulk add, edit/replace link, inline preview, and the web's
@@ -23,6 +27,7 @@ class DocumentsScreen extends ConsumerStatefulWidget {
 class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
   String _category = 'All Documents';
   String _search = '';
+  String? _employeeId; // drill-down selection for Contracts/Compliance
 
   @override
   Widget build(BuildContext context) {
@@ -43,18 +48,51 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
           for (final c in kDocCategories) {
             counts[c] = docs.where((d) => d.category == c).length;
           }
+          // Employee-first drill-down (web): for Contracts/Compliance, show an
+          // employee list first; drilling into one shows that person's docs.
+          final employeeFirst = _isEmployeeFirstCategory(_category);
+          final showEmployeePicker = employeeFirst && _employeeId == null;
+
           final list = docs.where((d) {
             if (_category != 'All Documents' && d.category != _category) return false;
+            if (employeeFirst && _employeeId != null && d.employeeId != _employeeId) {
+              return false;
+            }
             if (_search.isNotEmpty && !d.name.toLowerCase().contains(_search)) return false;
             return true;
           }).toList();
+
+          // Employees (id -> name + count) that have docs in this category.
+          final empAgg = <String, ({String name, int count})>{};
+          if (employeeFirst) {
+            for (final d in docs.where((d) =>
+                d.category == _category && (d.employeeId ?? '').isNotEmpty,)) {
+              final id = d.employeeId!;
+              final prev = empAgg[id];
+              empAgg[id] = (
+                name: d.assigneeName?.isNotEmpty == true ? d.assigneeName! : 'Employee',
+                count: (prev?.count ?? 0) + 1,
+              );
+            }
+          }
+          final empList = empAgg.entries
+              .where((e) => _search.isEmpty ||
+                  e.value.name.toLowerCase().contains(_search),)
+              .toList();
+          final selectedName = _employeeId != null ? empAgg[_employeeId]?.name : null;
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: TextField(
-                  decoration: const InputDecoration(isDense: true, prefixIcon: Icon(Icons.search, size: 18), hintText: 'Search documents'),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    hintText: showEmployeePicker
+                        ? 'Search employees'
+                        : 'Search documents',
+                  ),
                   onChanged: (v) => setState(() => _search = v.toLowerCase()),
                 ),
               ),
@@ -73,24 +111,55 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                               : null,
                           label: Text('$c (${counts[c] ?? 0})'),
                           selected: _category == c,
-                          onSelected: (_) => setState(() => _category = c),
+                          onSelected: (_) => setState(() {
+                            _category = c;
+                            _employeeId = null; // reset drill-down
+                          }),
                         ),
                       ),
                   ],
                 ),
               ),
+              // Back-to-employees breadcrumb when drilled in.
+              if (employeeFirst && _employeeId != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: Text('All employees · ${selectedName ?? ''}'),
+                    onPressed: () => setState(() => _employeeId = null),
+                  ),
+                ),
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
                     ref.invalidate(documentsProvider);
                     await ref.read(documentsProvider.future);
                   },
-                  child: list.isEmpty
-                      ? ListView(children: const [Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No documents found')))])
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 88),
-                          children: [for (final d in list) _DocCard(doc: d)],
-                        ),
+                  child: showEmployeePicker
+                      ? (empList.isEmpty
+                          ? ListView(children: const [Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No documents found')))])
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 88),
+                              children: [
+                                for (final e in empList)
+                                  Card(
+                                    child: ListTile(
+                                      leading: const Icon(Icons.person_outline),
+                                      title: Text(e.value.name),
+                                      subtitle: Text('${e.value.count} document${e.value.count == 1 ? '' : 's'}'),
+                                      trailing: const Icon(Icons.chevron_right),
+                                      onTap: () => setState(() => _employeeId = e.key),
+                                    ),
+                                  ),
+                              ],
+                            ))
+                      : (list.isEmpty
+                          ? ListView(children: const [Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No documents found')))])
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 88),
+                              children: [for (final d in list) _DocCard(doc: d)],
+                            )),
                 ),
               ),
             ],
@@ -177,11 +246,15 @@ class _DocCard extends ConsumerWidget {
                     onSelected: (v) {
                       if (v == 'edit') _showEditLink(context, ref, doc, 'edit');
                       if (v == 'replace') _showEditLink(context, ref, doc, 'replace');
+                      if (v == 'rename') _showRename(context, ref, doc);
+                      if (v == 'share') _share(context, ref, doc);
                       if (v == 'delete') _confirmDelete(context, ref, doc);
                     },
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'edit', child: Text('Edit Link')),
                       PopupMenuItem(value: 'replace', child: Text('Replace Link')),
+                      PopupMenuItem(value: 'rename', child: Text('Rename')),
+                      PopupMenuItem(value: 'share', child: Text('Share')),
                       PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Color(0xFFDC2626)))),
                     ],
                   ),
@@ -201,6 +274,54 @@ class _DocCard extends ConsumerWidget {
           Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
       );
+
+  /// Share the document's link via the native share sheet (mobile equivalent
+  /// of the web ShareDocumentDialog's copy-link).
+  Future<void> _share(BuildContext context, WidgetRef ref, HrDocument doc) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final url = await ref.read(documentsRepositoryProvider).resolveUrl(doc);
+    if (url == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('This document has no link to share.')));
+      return;
+    }
+    await Share.share('${doc.name}: $url', subject: doc.name);
+  }
+
+  void _showRename(BuildContext context, WidgetRef ref, HrDocument doc) {
+    final controller = TextEditingController(text: doc.name);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename document'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Document name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              final messenger = ScaffoldMessenger.of(context);
+              final nav = Navigator.of(ctx);
+              final ok = await ref
+                  .read(documentsRepositoryProvider)
+                  .renameDocument(doc.id, name);
+              ref.invalidate(documentsProvider);
+              nav.pop();
+              if (!ok) {
+                messenger.showSnackBar(const SnackBar(
+                    content: Text("You don't have permission to rename this document."),),);
+              }
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref, HrDocument doc) async {
     final messenger = ScaffoldMessenger.of(context);

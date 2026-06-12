@@ -13,6 +13,7 @@ class EmployeeEditData {
     this.jobTitle,
     this.location,
     this.status,
+    this.employmentType,
   });
   final String firstName;
   final String lastName;
@@ -22,6 +23,7 @@ class EmployeeEditData {
   final String? jobTitle;
   final String? location;
   final String? status;
+  final String? employmentType;
 
   factory EmployeeEditData.fromMap(Map<String, dynamic> m) => EmployeeEditData(
         firstName: (m['first_name'] ?? '') as String,
@@ -32,6 +34,7 @@ class EmployeeEditData {
         jobTitle: m['job_title'] as String?,
         location: m['location'] as String?,
         status: m['status'] as String?,
+        employmentType: m['employment_type'] as String?,
       );
 }
 
@@ -57,7 +60,7 @@ class EmployeesRepository {
         .from('employee_directory')
         .select(
           'id, first_name, last_name, email, department, job_title, '
-          'location, status, hire_date, profile_id, manager_id, line_manager_id',
+          'location, status, hire_date, profile_id, manager_id, line_manager_id, employment_type',
         )
         .order('first_name', ascending: true);
 
@@ -75,7 +78,7 @@ class EmployeesRepository {
         .from('employee_directory')
         .select(
           'id, first_name, last_name, email, department, job_title, '
-          'location, status, hire_date, profile_id, manager_id, line_manager_id',
+          'location, status, hire_date, profile_id, manager_id, line_manager_id, employment_type',
         )
         .eq('id', id)
         .maybeSingle();
@@ -234,7 +237,7 @@ class EmployeesRepository {
   Future<EmployeeEditData?> fullById(String id) async {
     final row = await supabase
         .from('employees')
-        .select('first_name, last_name, email, phone, department, job_title, location, status')
+        .select('first_name, last_name, email, phone, department, job_title, location, status, employment_type')
         .eq('id', id)
         .maybeSingle();
     return row == null ? null : EmployeeEditData.fromMap(row.cast<String, dynamic>());
@@ -335,6 +338,7 @@ class EmployeesRepository {
     String? jobTitle,
     required String location,
     required String status,
+    String? employmentType,
   }) async {
     await supabase.from('employees').update({
       'first_name': firstName.trim(),
@@ -345,6 +349,7 @@ class EmployeesRepository {
       'job_title': jobTitle,
       'location': location,
       'status': status,
+      if (employmentType != null) 'employment_type': employmentType,
     }).eq('id', id);
   }
 

@@ -14,6 +14,7 @@ class EmployeeDirectoryItem {
     this.profileId,
     this.managerId,
     this.lineManagerId,
+    this.employmentType,
     this.avatarUrl,
   });
 
@@ -29,9 +30,17 @@ class EmployeeDirectoryItem {
   final String? profileId;
   final String? managerId;
   final String? lineManagerId;
+  final String? employmentType; // full_time | probation | intern
 
   /// Resolved public avatar URL (filled in by the repository), if any.
   String? avatarUrl;
+
+  /// "Full-Time" | "Probation" | "Intern" (web formatEmploymentType).
+  String get employmentTypeLabel => switch (employmentType) {
+        'intern' => 'Intern',
+        'probation' => 'Probation',
+        _ => 'Full-Time',
+      };
 
   String get fullName => '$firstName $lastName'.trim();
 
@@ -63,6 +72,7 @@ class EmployeeDirectoryItem {
         profileId: m['profile_id'] as String?,
         managerId: m['manager_id'] as String?,
         lineManagerId: m['line_manager_id'] as String?,
+        employmentType: m['employment_type'] as String?,
       );
 }
 

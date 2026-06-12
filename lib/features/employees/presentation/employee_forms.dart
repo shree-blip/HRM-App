@@ -7,6 +7,12 @@ import '../data/employees_providers.dart';
 const kEmpDepartments = ['Executive', 'Accounting', 'Tax', 'Operations', 'Marketing', 'IT', 'Healthcare', 'Focus Data'];
 const kEmpLocations = <(String, String)>[('US', 'United States'), ('Nepal', 'Nepal')];
 const kEmpStatuses = ['active', 'probation', 'inactive'];
+const kEmploymentTypes = ['full_time', 'probation', 'intern'];
+const Map<String, String> kEmploymentTypeLabels = {
+  'full_time': 'Full-Time',
+  'probation': 'Probation',
+  'intern': 'Intern',
+};
 
 void _invalidate(WidgetRef ref, String? id) {
   ref.invalidate(employeesListProvider);
@@ -207,6 +213,7 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
   String? _department;
   String? _location;
   String _status = 'active';
+  String _employmentType = 'full_time';
   String? _dob;
   String? _joining;
   bool _loading = true;
@@ -228,6 +235,9 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
     _department = kEmpDepartments.contains(e.department) ? e.department : null;
     _location = e.location == 'Nepal' ? 'Nepal' : (e.location == 'US' ? 'US' : null);
     _status = kEmpStatuses.contains(e.status) ? e.status! : 'active';
+    if (kEmploymentTypes.contains(e.employmentType)) {
+      _employmentType = e.employmentType!;
+    }
     final repo = ref.read(employeesRepositoryProvider);
     try {
       final full = await repo.fullById(e.id);
@@ -236,6 +246,9 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
         if (kEmpDepartments.contains(full.department)) _department = full.department;
         if (full.location == 'US' || full.location == 'Nepal') _location = full.location;
         if (kEmpStatuses.contains(full.status)) _status = full.status!;
+        if (kEmploymentTypes.contains(full.employmentType)) {
+          _employmentType = full.employmentType!;
+        }
       }
     } catch (_) {}
     // Preload milestones from the same source View Profile uses (the linked
@@ -280,6 +293,7 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
         jobTitle: _role.text,
         location: _location ?? 'US',
         status: _status,
+        employmentType: _employmentType,
       );
       await repo.saveMilestones(profileId: widget.employee.profileId, dob: _dob, joining: _joining);
       _invalidate(ref, widget.employee.id);
@@ -343,6 +357,17 @@ class _EditEmployeeFormState extends ConsumerState<_EditEmployeeForm> {
             decoration: const InputDecoration(labelText: 'Status'),
             items: [for (final s in kEmpStatuses) DropdownMenuItem(value: s, child: Text(s[0].toUpperCase() + s.substring(1)))],
             onChanged: (v) => setState(() => _status = v ?? 'active'),
+          ),
+          const SizedBox(height: 10),
+          // Employment Type (web EditEmployeeDialog: Full-Time/Probation/Intern).
+          DropdownButtonFormField<String>(
+            initialValue: _employmentType,
+            decoration: const InputDecoration(labelText: 'Employment Type'),
+            items: [
+              for (final t in kEmploymentTypes)
+                DropdownMenuItem(value: t, child: Text(kEmploymentTypeLabels[t]!)),
+            ],
+            onChanged: (v) => setState(() => _employmentType = v ?? 'full_time'),
           ),
           const SizedBox(height: 12),
           Text('Milestones', style: theme.textTheme.labelLarge),

@@ -249,6 +249,16 @@ class DocumentsRepository {
     return (data as List).isNotEmpty;
   }
 
+  /// Rename a document (web renameDocument: updates the `name` column).
+  Future<bool> renameDocument(String id, String newName) async {
+    final data = await supabase
+        .from('documents')
+        .update({'name': newName.trim(), 'updated_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', id)
+        .select('id');
+    return (data as List).isNotEmpty;
+  }
+
   /// Delete a document (+ legacy storage file). Returns false if RLS blocked it.
   Future<bool> deleteDocument(HrDocument doc) async {
     if (doc.hasLegacyFile) {
