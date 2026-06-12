@@ -14,6 +14,77 @@ double loanEmi(num principal, int termMonths, {double annualRate = kLoanAnnualRa
   return principal * r * pow / (pow - 1);
 }
 
+double _r2(double v) => (v * 100).roundToDouble() / 100;
+
+/// One row of the reducing-balance amortization schedule.
+class AmortizationRow {
+  const AmortizationRow({
+    required this.month,
+    required this.openingBalance,
+    required this.emi,
+    required this.principal,
+    required this.interest,
+    required this.closingBalance,
+  });
+  final int month;
+  final double openingBalance;
+  final double emi;
+  final double principal;
+  final double interest;
+  final double closingBalance;
+}
+
+/// Exact port of the web generateAmortizationSchedule (loanCalculations.ts):
+/// per-month 2dp rounding; the final month settles the remaining balance.
+List<AmortizationRow> amortizationSchedule(
+  num principal,
+  int termMonths, {
+  double annualRate = kLoanAnnualRate,
+}) {
+  if (termMonths <= 0 || principal <= 0) return const [];
+  final monthlyRate = annualRate / 100 / 12;
+  final emi = _r2(loanEmi(principal, termMonths, annualRate: annualRate));
+  final rows = <AmortizationRow>[];
+  var balance = principal.toDouble();
+  for (var i = 1; i <= termMonths; i++) {
+    final interest = _r2(balance * monthlyRate);
+    final principalPart = i == termMonths ? balance : _r2(emi - interest);
+    final closing = math.max(0.0, _r2(balance - principalPart));
+    rows.add(AmortizationRow(
+      month: i,
+      openingBalance: _r2(balance),
+      emi: i == termMonths ? _r2(principalPart + interest) : emi,
+      principal: principalPart,
+      interest: interest,
+      closingBalance: closing,
+    ),);
+    balance = closing;
+  }
+  return rows;
+}
+
+double amortizationTotalInterest(List<AmortizationRow> s) =>
+    _r2(s.fold(0.0, (a, r) => a + r.interest));
+double amortizationTotalPayment(List<AmortizationRow> s) =>
+    _r2(s.fold(0.0, (a, r) => a + r.emi));
+
+/// Ordered status steps for the timeline (web SIMPLIFIED_STATUSES).
+const kLoanStatusSteps = [
+  'draft', 'pending_manager', 'pending_vp', 'approved', 'rejected',
+  'disbursed', 'closed',
+];
+
+/// Web SIMPLIFIED_STATUS_LABELS.
+const Map<String, String> kLoanStepLabels = {
+  'draft': 'Draft',
+  'pending_manager': 'Pending Manager',
+  'pending_vp': 'Pending VP',
+  'approved': 'Approved',
+  'rejected': 'Rejected',
+  'disbursed': 'Disbursed',
+  'closed': 'Closed',
+};
+
 class LoanRequest {
   const LoanRequest({
     required this.id,

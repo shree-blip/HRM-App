@@ -5,9 +5,10 @@ import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../data/loan_models.dart';
 import '../data/loans_providers.dart';
+import 'loan_widgets.dart';
 
-/// Loans (Phase 11): My Loans + (manager) Review + (VP) Finance. Request →
-/// manager approval → VP approval → disburse → repayments.
+/// Loans (Phase 11): My Loans + Calculator + (manager) Review + (VP) Finance.
+/// Request → manager approval → VP approval → disburse → repayments.
 class LoansScreen extends ConsumerWidget {
   const LoansScreen({super.key});
 
@@ -19,11 +20,13 @@ class LoansScreen extends ConsumerWidget {
 
     final tabs = <Tab>[
       const Tab(text: 'My Loans'),
+      const Tab(text: 'Calculator'),
       if (showManager) const Tab(text: 'Review'),
       if (showVp) const Tab(text: 'Finance'),
     ];
     final views = <Widget>[
       const _MyLoans(),
+      const LoanCalculatorView(),
       if (showManager) const _ManagerReview(),
       if (showVp) const _Finance(),
     ];
@@ -92,6 +95,9 @@ void _showMyDetail(BuildContext context, WidgetRef ref, LoanRequest loan) {
                 Text('Loan · ${loan.amount}', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 8),
                 _statusChip(loan.status),
+                const SizedBox(height: 12),
+                // Status timeline (web LoanStatusTimeline).
+                LoanStatusTimeline(status: loan.status),
                 const SizedBox(height: 8),
                 _kv(context, 'Term', '${loan.termMonths} months'),
                 _kv(context, 'Reason', loan.reasonType ?? '—'),
@@ -99,6 +105,21 @@ void _showMyDetail(BuildContext context, WidgetRef ref, LoanRequest loan) {
                 _kv(context, 'Monthly EMI', loan.emi.toStringAsFixed(2)),
                 if (loan.remainingBalance != null) _kv(context, 'Remaining', loan.remainingBalance!.toStringAsFixed(2)),
                 if (loan.managerComment != null && loan.managerComment!.isNotEmpty) _kv(context, 'Manager note', loan.managerComment!),
+                // Estimated amortization schedule (web "View amortization schedule").
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('View amortization schedule',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+                  children: [
+                    AmortizationTable(
+                      schedule: amortizationSchedule(
+                        loan.amount, loan.termMonths,
+                        annualRate: loan.interestRate,
+                      ),
+                    ),
+                  ],
+                ),
                 const Divider(height: 24),
                 Text('Repayments', style: theme.textTheme.labelLarge),
                 const SizedBox(height: 6),
@@ -389,13 +410,22 @@ class _RequestFormState extends State<_RequestForm> {
             onChanged: (v) => setState(() => _reason = v ?? 'general'),
           ),
           const SizedBox(height: 8),
-          if (amt > 0)
+          if (amt > 0) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(8)),
               child: Text('Estimated EMI: ${emi.toStringAsFixed(2)} / month for $_term months @ ${kLoanAnnualRate.toStringAsFixed(0)}% p.a.'),
             ),
+            // Collapsible schedule (web LoanRequestForm "View amortization schedule").
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text('View amortization schedule',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,),),
+              children: [AmortizationTable(schedule: amortizationSchedule(amt, _term))],
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(controller: _signature, decoration: const InputDecoration(labelText: 'E-signature (type your full name) *')),
           SwitchListTile(

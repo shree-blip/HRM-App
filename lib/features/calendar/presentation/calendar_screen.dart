@@ -18,6 +18,7 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   late DateTime _month; // first of month
   DateTime? _selected;
+  String _tab = 'upcoming'; // upcoming | holidays | deadlines | milestones
 
   @override
   void initState() {
@@ -83,12 +84,73 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     for (final e in selEntries) _entryTile(e, canManage),
                   const Divider(height: 24),
                 ],
-                Text('Upcoming', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                if (upcoming.isEmpty)
-                  const Text('Nothing upcoming.')
-                else
-                  for (final e in upcoming) _entryTile(e, canManage, showDate: true),
+                // Tab strip — web CompanyCalendar tabs (Upcoming / Holidays /
+                // Deadlines / Milestones); month-scoped counts like the web.
+                Builder(builder: (context) {
+                  final monthEntries = entries
+                      .where((e) =>
+                          e.date.year == _month.year &&
+                          e.date.month == _month.month,)
+                      .toList();
+                  final holidays = monthEntries
+                      .where((e) => e.type == 'holiday' || e.type == 'optional')
+                      .toList();
+                  final deadlines = monthEntries
+                      .where((e) => e.type == 'deadline' || e.type == 'event')
+                      .toList();
+                  final milestonesAsync = ref.watch(milestoneProfilesProvider);
+                  final milestones = _monthMilestones(
+                      milestonesAsync.valueOrNull ?? const [],);
+
+                  Widget content;
+                  switch (_tab) {
+                    case 'holidays':
+                      content = _entryList(holidays, canManage,
+                          empty: 'No holidays this month.',);
+                    case 'deadlines':
+                      content = _entryList(deadlines, canManage,
+                          empty: 'No deadlines this month.',);
+                    case 'milestones':
+                      content = milestonesAsync.isLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                  child: SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),),),)
+                          : _milestoneList(milestones);
+                    default:
+                      content = upcoming.isEmpty
+                          ? const Text('Nothing upcoming.')
+                          : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              for (final e in upcoming)
+                                _entryTile(e, canManage, showDate: true),
+                            ],);
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SegmentedButton<String>(
+                          showSelectedIcon: false,
+                          segments: [
+                            const ButtonSegment(value: 'upcoming', label: Text('Upcoming')),
+                            ButtonSegment(value: 'holidays', label: Text('Holidays (${holidays.length})')),
+                            ButtonSegment(value: 'deadlines', label: Text('Deadlines (${deadlines.length})')),
+                            ButtonSegment(value: 'milestones', label: Text('Milestones (${milestones.length})')),
+                          ],
+                          selected: {_tab},
+                          onSelectionChanged: (s) => setState(() => _tab = s.first),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      content,
+                    ],
+                  );
+                },),
                 const SizedBox(height: 24),
               ],
             ),
@@ -96,6 +158,75 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         },
       ),
     );
+  }
+
+  /// Birthdays/anniversaries falling in the displayed month (web
+  /// getMilestonesForMonth: occurrence of dob/joining month-day this year;
+  /// anniversaries only after the joining year).
+  List<({String name, String type, DateTime date, int? years})> _monthMilestones(
+    List<MilestoneProfile> profiles,
+  ) {
+    final out = <({String name, String type, DateTime date, int? years})>[];
+    for (final p in profiles) {
+      if (p.dob != null && p.dob!.month == _month.month) {
+        out.add((
+          name: p.name,
+          type: 'birthday',
+          date: DateTime(_month.year, p.dob!.month, p.dob!.day),
+          years: null,
+        ),);
+      }
+      if (p.joining != null &&
+          p.joining!.month == _month.month &&
+          p.joining!.year < _month.year) {
+        out.add((
+          name: p.name,
+          type: 'anniversary',
+          date: DateTime(_month.year, p.joining!.month, p.joining!.day),
+          years: _month.year - p.joining!.year,
+        ),);
+      }
+    }
+    out.sort((a, b) => a.date.compareTo(b.date));
+    return out;
+  }
+
+  Widget _entryList(List<CalendarEntry> list, bool canManage,
+      {required String empty,}) {
+    if (list.isEmpty) return Text(empty);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (final e in list) _entryTile(e, canManage, showDate: true),
+    ],);
+  }
+
+  Widget _milestoneList(
+    List<({String name, String type, DateTime date, int? years})> list,
+  ) {
+    final theme = Theme.of(context);
+    if (list.isEmpty) return const Text('No milestones this month.');
+    return Column(children: [
+      for (final m in list)
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            m.type == 'birthday' ? Icons.cake_outlined : Icons.celebration_outlined,
+            color: m.type == 'birthday'
+                ? const Color(0xFFD97706)
+                : theme.colorScheme.primary,
+          ),
+          title: Text(m.name, style: const TextStyle(fontSize: 14)),
+          subtitle: Text(
+            m.type == 'birthday'
+                ? 'Birthday'
+                : 'Work anniversary${m.years != null ? ' · ${m.years} yr${m.years == 1 ? '' : 's'}' : ''}',
+            style: theme.textTheme.bodySmall,
+          ),
+          trailing: Text('${m.date.day}/${m.date.month}',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600),),
+        ),
+    ],);
   }
 
   Widget _monthHeader() {

@@ -28,13 +28,67 @@ class AnnouncementsScreen extends ConsumerWidget {
                 label: const Text('New'),
               )
             : null,
-        body: TabBarView(
+        body: Column(
           children: [
-            _List(provider: activeAnnouncementsProvider, canManage: canManage, isHistory: false),
-            _List(provider: announcementHistoryProvider, canManage: canManage, isHistory: true),
+            const _StatsCards(),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _List(provider: activeAnnouncementsProvider, canManage: canManage, isHistory: false),
+                  _List(provider: announcementHistoryProvider, canManage: canManage, isHistory: true),
+                ],
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Live / Pinned / Today / History counts (web Announcements stats cards).
+class _StatsCards extends ConsumerWidget {
+  const _StatsCards();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final live = ref.watch(activeAnnouncementsProvider).valueOrNull ?? const [];
+    final history = ref.watch(announcementHistoryProvider).valueOrNull ?? const [];
+    final now = DateTime.now();
+    final today = live.where((a) {
+      final c = a.createdAt?.toLocal();
+      return c != null && c.year == now.year && c.month == now.month && c.day == now.day;
+    }).length;
+    final pinned = live.where((a) => a.isPinned).length;
+
+    Widget card(String label, int value, IconData icon, Color color) => Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(height: 2),
+              Text('$value',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold, color: color,),),
+              Text(label,
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280)),),
+            ],),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+      child: Row(children: [
+        card('Live', live.length, Icons.campaign_outlined, const Color(0xFF2563EB)),
+        card('Pinned', pinned, Icons.push_pin_outlined, const Color(0xFFD97706)),
+        card('Today', today, Icons.today_outlined, const Color(0xFF16A34A)),
+        card('History', history.length, Icons.history, const Color(0xFF6B7280)),
+      ],),
     );
   }
 }
@@ -213,8 +267,32 @@ class _FormState extends State<_Form> {
   String _type = 'info';
   bool _pinned = false;
   Duration? _duration;
+  bool _customExpiryMode = false;
+  DateTime? _customExpiry; // local time, like the web datetime-local input
   bool _busy = false;
   String? _error;
+
+  Future<void> _pickCustomExpiry() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _customExpiry ?? now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 2),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_customExpiry ?? now),
+    );
+    if (time == null) return;
+    setState(() => _customExpiry =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute),);
+  }
+
+  String _fmtCustom(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
   @override
   void dispose() {
@@ -244,12 +322,42 @@ class _FormState extends State<_Form> {
             onChanged: (v) => setState(() => _type = v ?? 'info'),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<Duration?>(
-            initialValue: _duration,
+          DropdownButtonFormField<int>(
+            initialValue: _customExpiryMode
+                ? kAnnouncementDurations.length
+                : kAnnouncementDurations
+                    .indexWhere((d) => d.$2 == _duration)
+                    .clamp(0, kAnnouncementDurations.length - 1),
             decoration: const InputDecoration(labelText: 'Expires'),
-            items: [for (final d in kAnnouncementDurations) DropdownMenuItem(value: d.$2, child: Text(d.$1))],
-            onChanged: (v) => setState(() => _duration = v),
+            items: [
+              for (var i = 0; i < kAnnouncementDurations.length; i++)
+                DropdownMenuItem(value: i, child: Text(kAnnouncementDurations[i].$1)),
+              DropdownMenuItem(
+                  value: kAnnouncementDurations.length,
+                  child: const Text('Custom date/time'),),
+            ],
+            onChanged: (v) => setState(() {
+              if (v == null) return;
+              if (v == kAnnouncementDurations.length) {
+                _customExpiryMode = true;
+              } else {
+                _customExpiryMode = false;
+                _customExpiry = null;
+                _duration = kAnnouncementDurations[v].$2;
+              }
+            }),
           ),
+          if (_customExpiryMode)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.event, size: 16),
+                label: Text(_customExpiry == null
+                    ? 'Pick expiry date & time'
+                    : 'Expires ${_fmtCustom(_customExpiry!)}',),
+                onPressed: _pickCustomExpiry,
+              ),
+            ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Pin to top'),
@@ -280,18 +388,32 @@ class _FormState extends State<_Form> {
       setState(() => _error = 'Title and content are required.');
       return;
     }
+    // Custom expiry validation — web: required + must be in the future.
+    if (_customExpiryMode) {
+      if (_customExpiry == null) {
+        setState(() => _error = 'Please choose an expiry date/time.');
+        return;
+      }
+      if (!_customExpiry!.isAfter(DateTime.now())) {
+        setState(() => _error = 'Expiry time must be in the future.');
+        return;
+      }
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     final nav = Navigator.of(context);
     try {
+      final expiresAt = _customExpiryMode
+          ? _customExpiry!.toUtc()
+          : (_duration == null ? null : DateTime.now().toUtc().add(_duration!));
       await widget.ref.read(announcementsRepositoryProvider).create(
             title: _title.text,
             content: _content.text,
             type: _type,
             isPinned: _pinned,
-            expiresAt: _duration == null ? null : DateTime.now().toUtc().add(_duration!),
+            expiresAt: expiresAt,
           );
       widget.ref.invalidate(activeAnnouncementsProvider);
       widget.ref.invalidate(announcementHistoryProvider);
