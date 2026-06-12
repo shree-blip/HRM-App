@@ -1,7 +1,7 @@
 name: hrm_focus_flutter
 description: "Focus HRM — Flutter mobile app (iOS & Android). Backed by the existing Supabase project."
 publish_to: "none"
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -59,6 +59,15 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+# Launcher icon generated from the provided brand logo (512x512).
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/images/focus-logo.png
+  adaptive_icon_background: "#0E1F3D"
+  adaptive_icon_foreground: assets/images/focus-logo.png
 
 flutter:
   uses-material-design: true
