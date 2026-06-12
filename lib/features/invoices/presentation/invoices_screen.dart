@@ -5,6 +5,7 @@ import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../data/invoice_models.dart';
 import '../data/invoices_providers.dart';
+import 'invoice_pdf.dart';
 
 /// Invoices (Phase 11): My Invoices + (VP/Admin) Submissions. Create draft →
 /// submit → review (approve/reject) + comments. No edit/delete (matches web).
@@ -261,6 +262,17 @@ class _InvoiceDetailState extends ConsumerState<_InvoiceDetail> {
                 _kv('Payment', '${inv.paymentAccountName ?? ''} ${inv.paymentBankName ?? ''} ${inv.paymentAccountNumber ?? ''} ${inv.paymentSwiftCode ?? ''}'.trim()),
               const SizedBox(height: 12),
               // Actions
+              // Download / Print PDF — mobile-safe replacement for the web's
+              // jsPDF "Download PDF"; opens the share/print sheet.
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                  label: const Text('Download / Print PDF'),
+                  onPressed: () => exportInvoicePdf(inv),
+                ),
+              ),
+              const SizedBox(height: 8),
               if (isOwner && inv.status == 'draft')
                 SizedBox(
                   width: double.infinity,

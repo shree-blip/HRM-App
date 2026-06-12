@@ -10,6 +10,7 @@ class BugReport {
     this.status,
     this.reporterName,
     this.createdAt,
+    this.screenshotPaths = const [],
   });
 
   final String id;
@@ -20,20 +21,60 @@ class BugReport {
   final String? reporterName;
   final DateTime? createdAt;
 
+  /// Storage paths in the `bug-screenshots` bucket (resolved to signed URLs on
+  /// demand). Mirrors the web screenshot_urls, falling back to the legacy
+  /// single screenshot_url.
+  final List<String> screenshotPaths;
+
   BugReport withReporter(String? name) => BugReport(
         id: id, userId: userId, title: title, description: description,
         status: status, reporterName: name, createdAt: createdAt,
+        screenshotPaths: screenshotPaths,
       );
 
-  factory BugReport.fromMap(Map<String, dynamic> m) => BugReport(
+  factory BugReport.fromMap(Map<String, dynamic> m) {
+    final urls = (m['screenshot_urls'] as List?)?.cast<String>() ?? const [];
+    final single = m['screenshot_url'] as String?;
+    final paths = urls.isNotEmpty
+        ? urls
+        : (single != null && single.isNotEmpty ? [single] : const <String>[]);
+    return BugReport(
+      id: m['id'] as String,
+      userId: m['user_id'] as String,
+      title: (m['title'] ?? '') as String,
+      description: (m['description'] ?? '') as String,
+      status: m['status'] as String?,
+      createdAt: m['created_at'] != null
+          ? DateTime.tryParse(m['created_at'] as String)?.toUtc()
+          : null,
+      screenshotPaths: paths,
+    );
+  }
+}
+
+/// A row from `grievance_attachments`.
+class GrievanceAttachment {
+  const GrievanceAttachment({
+    required this.id,
+    required this.filePath,
+    required this.fileName,
+    this.fileSize,
+    this.fileType,
+  });
+
+  final String id;
+  final String filePath;
+  final String fileName;
+  final int? fileSize;
+  final String? fileType;
+
+  factory GrievanceAttachment.fromMap(Map<String, dynamic> m) =>
+      GrievanceAttachment(
         id: m['id'] as String,
-        userId: m['user_id'] as String,
-        title: (m['title'] ?? '') as String,
-        description: (m['description'] ?? '') as String,
-        status: m['status'] as String?,
-        createdAt: m['created_at'] != null
-            ? DateTime.tryParse(m['created_at'] as String)?.toUtc()
-            : null,
+        filePath: (m['file_path'] ?? '') as String,
+        fileName: (m['file_name'] ?? 'attachment') as String,
+        fileSize: (m['file_size'] as num?)?.toInt(),
+        fileType: m['file_type'] as String?,
       );
 }
 

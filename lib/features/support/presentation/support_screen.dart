@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
@@ -110,17 +115,54 @@ class _BugsTab extends ConsumerWidget {
 void _showBugForm(BuildContext context, WidgetRef ref) {
   final title = TextEditingController();
   final desc = TextEditingController();
+  final shots = <XFile>[];
   _formSheet(
     context,
     heading: 'Report a bug',
-    fields: [
+    statefulFields: (setLocal) => [
       TextField(controller: title, decoration: const InputDecoration(labelText: 'Title *')),
       const SizedBox(height: 12),
       TextField(controller: desc, maxLines: 4, decoration: const InputDecoration(labelText: 'Description *', hintText: 'Steps to reproduce, what happened…')),
+      const SizedBox(height: 12),
+      // Screenshots — gallery multi-pick (mobile equivalent of the web's
+      // drag/drop/paste/click); preview grid; multiple allowed.
+      OutlinedButton.icon(
+        icon: const Icon(Icons.image_outlined, size: 18),
+        label: Text(shots.isEmpty ? 'Add screenshots' : 'Add more screenshots'),
+        onPressed: () async {
+          final picked = await ImagePicker().pickMultiImage();
+          if (picked.isNotEmpty) setLocal(() => shots.addAll(picked));
+        },
+      ),
+      if (shots.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (var i = 0; i < shots.length; i++)
+              Stack(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(File(shots[i].path),
+                      width: 72, height: 72, fit: BoxFit.cover,),
+                ),
+                Positioned(
+                  top: -6, right: -6,
+                  child: IconButton(
+                    icon: const Icon(Icons.cancel, size: 18),
+                    onPressed: () => setLocal(() => shots.removeAt(i)),
+                  ),
+                ),
+              ],),
+          ],
+        ),
+      ],
     ],
     onSubmit: () async {
       if (title.text.trim().isEmpty || desc.text.trim().isEmpty) return 'Title and description are required.';
-      await ref.read(supportRepositoryProvider).createBug(title.text, desc.text);
+      await ref.read(supportRepositoryProvider).createBug(
+            title.text, desc.text, screenshots: shots,);
       ref.invalidate(bugsProvider);
       return null;
     },
@@ -138,6 +180,16 @@ void _showBugDetail(BuildContext context, WidgetRef ref, BugReport b, bool canMa
         _Badge(b.status ?? 'open', bugStatusColors(b.status)),
         const SizedBox(height: 8),
         Text(b.description),
+        if (b.screenshotPaths.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.image_outlined, size: 18),
+            label: Text(b.screenshotPaths.length > 1
+                ? 'View Screenshots (${b.screenshotPaths.length})'
+                : 'View Screenshot',),
+            onPressed: () => _showBugScreenshots(context, ref, b.screenshotPaths),
+          ),
+        ],
         if (canManage) ...[
           const SizedBox(height: 12),
           _StatusPicker(
@@ -209,6 +261,51 @@ class _GrievancesTab extends ConsumerWidget {
   }
 }
 
+/// Resolve each screenshot path to a signed URL and show them in a viewer.
+void _showBugScreenshots(
+    BuildContext context, WidgetRef ref, List<String> paths,) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => FutureBuilder<List<String>>(
+      future: Future.wait(paths.map((p) async =>
+          await ref.read(supportRepositoryProvider).bugScreenshotUrl(p) ?? '',),),
+      builder: (ctx, snap) {
+        if (!snap.hasData) {
+          return const SizedBox(
+            height: 200, child: Center(child: CircularProgressIndicator()),);
+        }
+        final urls = snap.data!.where((u) => u.isNotEmpty).toList();
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Screenshots',
+                  style: Theme.of(ctx).textTheme.titleLarge,),
+              const SizedBox(height: 12),
+              if (urls.isEmpty)
+                const Text('Could not load screenshots.')
+              else
+                for (final u in urls) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(u,
+                        errorBuilder: (_, __, ___) =>
+                            const Text('Could not load image.'),),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
+
 void _showGrievanceForm(BuildContext context, WidgetRef ref) {
   final title = TextEditingController();
   final details = TextEditingController();
@@ -216,6 +313,7 @@ void _showGrievanceForm(BuildContext context, WidgetRef ref) {
   String priority = 'Medium';
   bool anon = false;
   String visibility = 'nobody';
+  final attachments = <PlatformFile>[];
   _formSheet(
     context,
     heading: 'New grievance',
@@ -251,17 +349,51 @@ void _showGrievanceForm(BuildContext context, WidgetRef ref) {
           items: [for (final v in kAnonymousVisibility) DropdownMenuItem(value: v.$1, child: Text(v.$2))],
           onChanged: (v) => setLocal(() => visibility = v ?? visibility),
         ),
+      const SizedBox(height: 4),
+      // Attachments — any file type (web uses a plain file input).
+      OutlinedButton.icon(
+        icon: const Icon(Icons.attach_file, size: 18),
+        label: Text(attachments.isEmpty ? 'Attach files' : 'Add more files'),
+        onPressed: () async {
+          final res = await FilePicker.platform
+              .pickFiles(allowMultiple: true, withData: false);
+          if (res != null) {
+            setLocal(() => attachments.addAll(
+                res.files.where((f) => f.path != null),),);
+          }
+        },
+      ),
+      for (var i = 0; i < attachments.length; i++)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          leading: const Icon(Icons.insert_drive_file_outlined, size: 18),
+          title: Text(attachments[i].name,
+              maxLines: 1, overflow: TextOverflow.ellipsis,),
+          trailing: IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => setLocal(() => attachments.removeAt(i)),
+          ),
+        ),
     ],
     onSubmit: () async {
       if (title.text.trim().isEmpty || details.text.trim().isEmpty) return 'Title and details are required.';
-      await ref.read(supportRepositoryProvider).createGrievance(
-            title: title.text,
-            category: category,
-            priority: priority,
-            details: details.text,
-            isAnonymous: anon,
-            anonymousVisibility: visibility,
-          );
+      final repo = ref.read(supportRepositoryProvider);
+      final id = await repo.createGrievance(
+        title: title.text,
+        category: category,
+        priority: priority,
+        details: details.text,
+        isAnonymous: anon,
+        anonymousVisibility: visibility,
+      );
+      // Upload attachments after creation (web: loop uploadAttachment(result.id)).
+      for (final f in attachments) {
+        if (f.path == null) continue;
+        try {
+          await repo.uploadGrievanceAttachment(id, File(f.path!), f.name);
+        } catch (_) {}
+      }
       ref.invalidate(grievancesProvider);
       return null;
     },
@@ -283,6 +415,7 @@ void _showGrievanceDetail(BuildContext context, WidgetRef ref, Grievance g, bool
         ],),
         const SizedBox(height: 8),
         if (g.details != null) Text(g.details!),
+        _GrievanceAttachments(grievanceId: g.id),
         if (isManager) ...[
           const SizedBox(height: 12),
           _StatusPicker(
@@ -774,6 +907,49 @@ void _formSheet(
       child: _FormSheetBody(heading: heading, fields: fields, statefulFields: statefulFields, onSubmit: onSubmit),
     ),
   );
+}
+
+/// Grievance attachment list — download opens the signed URL externally.
+class _GrievanceAttachments extends ConsumerWidget {
+  const _GrievanceAttachments({required this.grievanceId});
+  final String grievanceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(grievanceAttachmentsProvider(grievanceId));
+    return async.maybeWhen(
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Text('Attachments (${items.length})',
+                style: Theme.of(context).textTheme.labelLarge,),
+            for (final a in items)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: const Icon(Icons.insert_drive_file_outlined, size: 18),
+                title: Text(a.fileName,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,),
+                trailing: const Icon(Icons.download_outlined, size: 18),
+                onTap: () async {
+                  final url = await ref
+                      .read(supportRepositoryProvider)
+                      .grievanceAttachmentUrl(a.filePath);
+                  if (url != null) {
+                    await launchUrl(Uri.parse(url),
+                        mode: LaunchMode.externalApplication,);
+                  }
+                },
+              ),
+          ],
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
+    );
+  }
 }
 
 class _FormSheetBody extends StatefulWidget {

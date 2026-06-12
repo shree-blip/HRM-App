@@ -48,8 +48,13 @@ dependencies:
   # IANA timezone math (Timezone Management: local time, abbr, UTC offset)
   timezone: ^0.9.4
 
+  # Invoice PDF export + print/share (mobile-safe; replaces web jsPDF)
+  pdf: ^3.11.1
+  printing: ^5.13.3
+
   cupertino_icons: ^1.0.8
 
+  intl: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

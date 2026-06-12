@@ -1,10 +1,16 @@
+import 'dart:io';
+
+import 'package:image_picker/image_picker.dart';
+
 import '../../../core/supabase/supabase_client.dart';
 import 'comment_models.dart';
 import 'support_models.dart';
 
 /// Bug reports + grievances data access (+ comments). Lists rely on RLS for
-/// visibility (mirrors the web, which fetches all and lets RLS scope). No
-/// schema changes; no file uploads (screenshots/attachments omitted).
+/// visibility (mirrors the web, which fetches all and lets RLS scope). Bug
+/// screenshots use the `bug-screenshots` bucket and grievance attachments the
+/// `grievance-attachments` bucket — same paths/columns as the web. No schema
+/// changes.
 class SupportRepository {
   String get _uid => supabase.auth.currentUser!.id;
 
@@ -78,7 +84,8 @@ class SupportRepository {
   Future<List<BugReport>> bugs() async {
     final rows = await supabase
         .from('bug_reports')
-        .select('id, user_id, title, description, status, created_at')
+        .select('id, user_id, title, description, status, '
+            'screenshot_url, screenshot_urls, created_at')
         .order('created_at', ascending: false);
     final list = (rows as List)
         .map((r) => BugReport.fromMap((r as Map).cast<String, dynamic>()))
@@ -87,14 +94,45 @@ class SupportRepository {
     return [for (final b in list) b.withReporter(names[b.userId] ?? 'Employee')];
   }
 
-  Future<void> createBug(String title, String description) async {
+  /// Create a bug report, optionally uploading screenshots first. Mirrors the
+  /// web submitBugReport: each file -> `bug-screenshots/{uid}/{ts}-{i}.{ext}`,
+  /// then insert with screenshot_url (first path) + screenshot_urls (all).
+  Future<void> createBug(
+    String title,
+    String description, {
+    List<XFile> screenshots = const [],
+  }) async {
+    final paths = <String>[];
+    for (var i = 0; i < screenshots.length; i++) {
+      final f = screenshots[i];
+      final ext = f.name.contains('.') ? f.name.split('.').last : 'png';
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      final path = '$_uid/$ts-$i.$ext';
+      await supabase.storage
+          .from('bug-screenshots')
+          .upload(path, File(f.path));
+      paths.add(path);
+    }
     await supabase.from('bug_reports').insert({
       'user_id': _uid,
       'title': title.trim(),
       'description': description.trim(),
+      'screenshot_url': paths.isNotEmpty ? paths.first : null,
+      'screenshot_urls': paths,
       'status': 'open',
     });
     await _notifyAdmins('🐞 New Bug Report', 'A new bug "${title.trim()}" was reported.', 'info');
+  }
+
+  /// Signed URL (1h) for a bug screenshot path — web getScreenshotUrl parity.
+  Future<String?> bugScreenshotUrl(String path) async {
+    try {
+      return await supabase.storage
+          .from('bug-screenshots')
+          .createSignedUrl(path, 3600);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> updateBugStatus(String id, String status) async {
@@ -124,7 +162,9 @@ class SupportRepository {
     return [for (final g in list) g.withSubmitter(names[g.userId] ?? 'Employee')];
   }
 
-  Future<void> createGrievance({
+  /// Returns the new grievance id so callers can attach files (web returns
+  /// result.id then loops uploadAttachment).
+  Future<String> createGrievance({
     required String title,
     required String category,
     required String priority,
@@ -133,7 +173,7 @@ class SupportRepository {
     String anonymousVisibility = 'nobody',
   }) async {
     final ctx = await _context();
-    await supabase.from('grievances').insert({
+    final inserted = await supabase.from('grievances').insert({
       'user_id': _uid,
       if (ctx.employeeId != null) 'employee_id': ctx.employeeId,
       if (ctx.orgId != null) 'org_id': ctx.orgId,
@@ -144,8 +184,52 @@ class SupportRepository {
       'is_anonymous': isAnonymous,
       'anonymous_visibility': anonymousVisibility,
       'status': 'submitted',
-    });
+    }).select('id').single();
     await _notifyAdmins('📣 New Grievance', 'A new grievance "${title.trim()}" was submitted.', 'grievance');
+    return inserted['id'] as String;
+  }
+
+  /// Upload a grievance attachment — same bucket/path/columns as the web
+  /// uploadAttachment: `grievance-attachments/{uid}/{grievanceId}/{ts}_{name}`
+  /// + a grievance_attachments row.
+  Future<void> uploadGrievanceAttachment(
+    String grievanceId,
+    File file,
+    String fileName, {
+    String? fileType,
+  }) async {
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final path = '$_uid/$grievanceId/${ts}_$fileName';
+    await supabase.storage.from('grievance-attachments').upload(path, file);
+    await supabase.from('grievance_attachments').insert({
+      'grievance_id': grievanceId,
+      'user_id': _uid,
+      'file_path': path,
+      'file_name': fileName,
+      'file_size': await file.length(),
+      if (fileType != null) 'file_type': fileType,
+    });
+  }
+
+  Future<List<GrievanceAttachment>> grievanceAttachments(String grievanceId) async {
+    final rows = await supabase
+        .from('grievance_attachments')
+        .select('id, file_path, file_name, file_size, file_type')
+        .eq('grievance_id', grievanceId)
+        .order('created_at', ascending: true);
+    return (rows as List)
+        .map((r) => GrievanceAttachment.fromMap((r as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<String?> grievanceAttachmentUrl(String filePath) async {
+    try {
+      return await supabase.storage
+          .from('grievance-attachments')
+          .createSignedUrl(filePath, 3600);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> updateGrievanceStatus(String id, String status, String submitterUid) async {

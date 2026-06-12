@@ -26,6 +26,12 @@ final bugCommentsProvider =
   (ref, id) => ref.read(supportRepositoryProvider).bugComments(id),
 );
 
+/// Attachments for a grievance (file rows; signed URLs resolved on tap).
+final grievanceAttachmentsProvider =
+    FutureProvider.autoDispose.family<List<GrievanceAttachment>, String>(
+  (ref, id) => ref.read(supportRepositoryProvider).grievanceAttachments(id),
+);
+
 /// Whether the current user is a grievance "manager" (sees internal comments,
 /// can update status).
 bool grievanceIsManager(WidgetRef ref) {
