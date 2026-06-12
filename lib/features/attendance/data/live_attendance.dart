@@ -311,11 +311,20 @@ class LiveAttendanceRepository {
 
   /// Builds a CSV string of attendance for [timeframe] = today | week | month
   /// (RLS-scoped), mirroring the web export's core columns.
-  Future<String> attendanceCsv(String timeframe) async {
+  Future<String> attendanceCsv(
+    String timeframe, {
+    DateTime? customStart,
+    DateTime? customEnd,
+  }) async {
     final now = DateTime.now().toUtc();
     final dayStart = DateTime.utc(now.year, now.month, now.day);
     DateTime start;
-    if (timeframe == 'today') {
+    DateTime end = dayStart.add(const Duration(days: 1));
+    if (timeframe == 'custom' && customStart != null && customEnd != null) {
+      start = DateTime.utc(customStart.year, customStart.month, customStart.day);
+      end = DateTime.utc(customEnd.year, customEnd.month, customEnd.day)
+          .add(const Duration(days: 1));
+    } else if (timeframe == 'today') {
       start = dayStart;
     } else if (timeframe == 'week') {
       final wd = now.weekday; // Mon=1..Sun=7
@@ -323,7 +332,6 @@ class LiveAttendanceRepository {
     } else {
       start = DateTime.utc(now.year, now.month, 1);
     }
-    final end = dayStart.add(const Duration(days: 1));
 
     final logs = await supabase
         .from('attendance_logs')

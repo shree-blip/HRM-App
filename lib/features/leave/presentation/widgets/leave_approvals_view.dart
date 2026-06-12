@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/widgets/month_filter.dart';
+import '../../data/leave_csv.dart';
 import '../../data/leave_models.dart';
 import '../../data/leave_providers.dart';
 import 'leave_conflict_dialog.dart';
@@ -20,6 +21,9 @@ class LeaveApprovalsView extends ConsumerStatefulWidget {
 class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
   String _status = 'pending';
   String _month = 'all'; // 'all' or YYYY-MM (by leave start date)
+  String _employee = 'all'; // 'all' or user_id
+  String _leaveType = 'all';
+  String _search = '';
 
   @override
   Widget build(BuildContext context) {
@@ -43,16 +47,37 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
           final months = {
             for (final r in all) monthKeyFromString(r.startDate),
           }.whereType<String>().toList();
-          // Month-filtered set drives BOTH the segment counts and the list.
-          final inMonth = all.where((r) =>
-              _month == 'all' || monthKeyFromString(r.startDate) == _month,);
-          final counts = {
-            'pending': inMonth.where((r) => r.status == 'pending').length,
-            'approved': inMonth.where((r) => r.status == 'approved').length,
-            'rejected': inMonth.where((r) => r.status == 'rejected').length,
+          // Unique employees + leave types for the filter dropdowns (web parity).
+          final employees = <String, String>{
+            for (final r in all) r.userId: r.employeeName ?? 'Employee',
           };
-          final list =
-              inMonth.where((r) => r.status == _status).toList();
+          final leaveTypes =
+              {for (final r in all) r.leaveType}.toList()..sort();
+
+          // Apply month + employee + type + search, then status.
+          bool matches(LeaveRequest r) {
+            if (_month != 'all' && monthKeyFromString(r.startDate) != _month) {
+              return false;
+            }
+            if (_employee != 'all' && r.userId != _employee) return false;
+            if (_leaveType != 'all' && r.leaveType != _leaveType) return false;
+            if (_search.trim().isNotEmpty) {
+              final q = _search.toLowerCase();
+              final hay = '${r.employeeName ?? ''} ${r.leaveType} '
+                      '${r.reason ?? ''}'
+                  .toLowerCase();
+              if (!hay.contains(q)) return false;
+            }
+            return true;
+          }
+
+          final filtered = all.where(matches);
+          final counts = {
+            'pending': filtered.where((r) => r.status == 'pending').length,
+            'approved': filtered.where((r) => r.status == 'approved').length,
+            'rejected': filtered.where((r) => r.status == 'rejected').length,
+          };
+          final list = filtered.where((r) => r.status == _status).toList();
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
@@ -61,6 +86,47 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
                 selected: _month,
                 onChanged: (m) => setState(() => _month = m),
               ),
+              const SizedBox(height: 8),
+              TextField(
+                decoration: const InputDecoration(
+                  isDense: true,
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  hintText: 'Search name / type / reason',
+                ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _employee,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Employee', isDense: true,),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All employees')),
+                      for (final e in employees.entries)
+                        DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => setState(() => _employee = v ?? 'all'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _leaveType,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Leave type', isDense: true,),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All types')),
+                      for (final t in leaveTypes)
+                        DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => setState(() => _leaveType = v ?? 'all'),
+                  ),
+                ),
+              ],),
               const SizedBox(height: 12),
               SegmentedButton<String>(
                 segments: [
@@ -71,7 +137,18 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
                 selected: {_status},
                 onSelectionChanged: (s) => setState(() => _status = s.first),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.file_download_outlined, size: 18),
+                  label: const Text('Export CSV'),
+                  onPressed: list.isEmpty
+                      ? null
+                      : () => shareCsv('$_status-leaves', leaveApprovalsCsv(list)),
+                ),
+              ),
+              const SizedBox(height: 4),
               if (list.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 40),

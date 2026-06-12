@@ -13,20 +13,26 @@ import '../data/attendance_providers.dart';
 Future<void> exportAttendanceCsv(
   BuildContext context,
   WidgetRef ref,
-  String timeframe,
-) async {
+  String timeframe, {
+  DateTime? customStart,
+  DateTime? customEnd,
+}) async {
   final messenger = ScaffoldMessenger.of(context);
+  final label = timeframe == 'custom' ? 'custom range' : timeframe;
   messenger
     ..clearSnackBars()
-    ..showSnackBar(SnackBar(content: Text('Preparing $timeframe export…')));
+    ..showSnackBar(SnackBar(content: Text('Preparing $label export…')));
   try {
-    final csv =
-        await ref.read(liveAttendanceRepositoryProvider).attendanceCsv(timeframe);
+    final csv = await ref.read(liveAttendanceRepositoryProvider).attendanceCsv(
+          timeframe,
+          customStart: customStart,
+          customEnd: customEnd,
+        );
     final rowCount = '\n'.allMatches(csv).length; // minus header
     if (rowCount <= 0) {
       messenger
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text('No attendance data for $timeframe.')));
+        ..showSnackBar(SnackBar(content: Text('No attendance data for $label.')));
       return;
     }
     final dir = await getTemporaryDirectory();
@@ -35,8 +41,8 @@ Future<void> exportAttendanceCsv(
     messenger.clearSnackBars();
     await Share.shareXFiles(
       [XFile(file.path, mimeType: 'text/csv')],
-      subject: 'Attendance ($timeframe)',
-      text: 'Attendance export — $timeframe ($rowCount rows)',
+      subject: 'Attendance ($label)',
+      text: 'Attendance export — $label ($rowCount rows)',
     );
   } catch (e) {
     messenger
@@ -45,8 +51,35 @@ Future<void> exportAttendanceCsv(
   }
 }
 
+/// Prompt for a date range, then export. Mirrors the web Attendance custom-range
+/// export dialog.
+Future<void> exportAttendanceCustomRange(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final now = DateTime.now();
+  final range = await showDateRangePicker(
+    context: context,
+    firstDate: DateTime(now.year - 2),
+    lastDate: DateTime(now.year + 1),
+    initialDateRange: DateTimeRange(
+      start: now.subtract(const Duration(days: 6)),
+      end: now,
+    ),
+  );
+  if (range == null || !context.mounted) return;
+  await exportAttendanceCsv(
+    context,
+    ref,
+    'custom',
+    customStart: range.start,
+    customEnd: range.end,
+  );
+}
+
 const List<({String value, String label})> kExportTimeframes = [
   (value: 'today', label: "Today's data"),
   (value: 'week', label: "This week's data"),
   (value: 'month', label: "This month's data"),
+  (value: 'custom', label: 'Custom range…'),
 ];

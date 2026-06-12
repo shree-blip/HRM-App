@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/shell/app_drawer.dart';
+import '../data/leave_csv.dart';
 import '../data/leave_providers.dart';
 import 'apply_leave_screen.dart';
 import 'widgets/leave_balance_cards.dart';
@@ -15,7 +16,26 @@ class LeaveScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Leave')),
+      appBar: AppBar(
+        title: const Text('Leave'),
+        actions: [
+          IconButton(
+            tooltip: 'Export my leave history (CSV)',
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final list = await ref.read(myLeaveRequestsProvider.future);
+              if (list.isEmpty) {
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('No leave history to export.')),
+                );
+                return;
+              }
+              await shareCsv('leave-history', leaveHistoryCsv(list));
+            },
+          ),
+        ],
+      ),
       drawer: const AppDrawer(currentRoute: '/leave'),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),

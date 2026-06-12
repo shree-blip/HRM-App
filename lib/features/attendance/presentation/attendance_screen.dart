@@ -28,7 +28,9 @@ class AttendanceScreen extends ConsumerWidget {
             PopupMenuButton<String>(
               tooltip: 'Export CSV',
               icon: const Icon(Icons.file_download_outlined),
-              onSelected: (v) => exportAttendanceCsv(context, ref, v),
+              onSelected: (v) => v == 'custom'
+                  ? exportAttendanceCustomRange(context, ref)
+                  : exportAttendanceCsv(context, ref, v),
               itemBuilder: (_) => [
                 const PopupMenuItem(
                   enabled: false,

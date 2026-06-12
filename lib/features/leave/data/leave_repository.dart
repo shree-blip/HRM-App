@@ -56,17 +56,22 @@ class LeaveRepository {
 
     final ids = list.map((r) => r.userId).toSet().toList();
     final names = <String, String>{};
+    final emails = <String, String>{};
     final profs = await supabase
         .from('profiles')
-        .select('user_id, first_name, last_name')
+        .select('user_id, first_name, last_name, email')
         .inFilter('user_id', ids);
     for (final p in profs as List) {
       final m = p as Map;
       names[m['user_id'] as String] =
           '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+      if (m['email'] != null) emails[m['user_id'] as String] = m['email'] as String;
     }
     return list
-        .map((r) => r.copyWith(employeeName: names[r.userId] ?? 'Employee'))
+        .map((r) => r.copyWith(
+              employeeName: names[r.userId] ?? 'Employee',
+              employeeEmail: emails[r.userId] ?? '',
+            ),)
         .toList();
   }
 

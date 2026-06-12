@@ -14,6 +14,7 @@ class LeaveRequest {
     this.halfDayPeriod,
     this.createdAt,
     this.employeeName,
+    this.employeeEmail,
   });
 
   final String id;
@@ -29,6 +30,7 @@ class LeaveRequest {
   final String? halfDayPeriod; // first_half | second_half
   final DateTime? createdAt;
   final String? employeeName; // populated for manager views
+  final String? employeeEmail; // populated for manager views (CSV export)
 
   /// Strips the "[Payroll] " / "[Paid Leave] " deduction prefix for display.
   String get cleanReason {
@@ -42,7 +44,8 @@ class LeaveRequest {
     return m?.group(1);
   }
 
-  LeaveRequest copyWith({String? employeeName}) => LeaveRequest(
+  LeaveRequest copyWith({String? employeeName, String? employeeEmail}) =>
+      LeaveRequest(
         id: id,
         userId: userId,
         leaveType: leaveType,
@@ -56,6 +59,7 @@ class LeaveRequest {
         halfDayPeriod: halfDayPeriod,
         createdAt: createdAt,
         employeeName: employeeName ?? this.employeeName,
+        employeeEmail: employeeEmail ?? this.employeeEmail,
       );
 
   factory LeaveRequest.fromMap(Map<String, dynamic> m) => LeaveRequest(
