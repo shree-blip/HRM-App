@@ -285,19 +285,26 @@ class _TeamLogsViewState extends ConsumerState<_TeamLogsView> {
                 return ListView(
                   padding: const EdgeInsets.all(12),
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _filterChip('Status', _status, {
-                          'all': 'All', 'in_progress': 'Active', 'on_hold': 'On Hold', 'completed': 'Done',
-                        }, (v) => setState(() => _status = v),),
-                        if (employees.isNotEmpty)
-                          _filterChip('Employee', _employee ?? 'all',
-                              {'all': 'All', ...employees}, (v) => setState(() => _employee = v == 'all' ? null : v),),
-                        if (clients.isNotEmpty)
-                          _filterChip('Client', _client ?? 'all',
-                              {'all': 'All', ...clients}, (v) => setState(() => _client = v == 'all' ? null : v),),
-                      ],
+                    // One clean horizontal scroll row — the Client chip used
+                    // to wrap onto a second line.
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _filterChip('Status', _status, {
+                            'all': 'All', 'in_progress': 'Active', 'on_hold': 'On Hold', 'completed': 'Done',
+                          }, (v) => setState(() => _status = v),),
+                          const SizedBox(width: 8),
+                          if (employees.isNotEmpty) ...[
+                            _filterChip('Employee', _employee ?? 'all',
+                                {'all': 'All', ...employees}, (v) => setState(() => _employee = v == 'all' ? null : v),),
+                            const SizedBox(width: 8),
+                          ],
+                          if (clients.isNotEmpty)
+                            _filterChip('Client', _client ?? 'all',
+                                {'all': 'All', ...clients}, (v) => setState(() => _client = v == 'all' ? null : v),),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (list.isEmpty)
@@ -545,53 +552,8 @@ class _ReportView extends ConsumerWidget {
         ],
       );
 
-  Widget _breakdownSection(BuildContext context, IconData icon, String title, List<_Breakdown> items) {
-    final theme = Theme.of(context);
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(icon, size: 16, color: theme.colorScheme.primary),
-              const SizedBox(width: 6),
-              Text('$title (${items.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],),
-            const SizedBox(height: 8),
-            ...items.map((b) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(b.label, style: const TextStyle(fontWeight: FontWeight.w500)),
-                            if (b.sub != null && b.sub!.isNotEmpty)
-                              Text(b.sub!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(formatMinutes(b.minutes),
-                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSecondaryContainer),),
-                      ),
-                    ],
-                  ),
-                ),),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _breakdownSection(BuildContext context, IconData icon, String title, List<_Breakdown> items) =>
+      _BreakdownCard(icon: icon, title: title, items: items);
 
   String _reportTypeLabel(ReportFilter f) {
     final parts = <String>[];
@@ -728,6 +690,86 @@ class _ReportView extends ConsumerWidget {
 
     await _share(name, '\u{FEFF}${lines.join('\n')}', messenger);
   }
+}
+
+/// One "Time by …" card: shows the first 5 rows with a Show more / Show less
+/// toggle (long reports needed too much scrolling). CSV export is unchanged.
+class _BreakdownCard extends StatefulWidget {
+  const _BreakdownCard({required this.icon, required this.title, required this.items});
+  final IconData icon;
+  final String title;
+  final List<_Breakdown> items;
+
+  @override
+  State<_BreakdownCard> createState() => _BreakdownCardState();
+}
+
+class _BreakdownCardState extends State<_BreakdownCard> {
+  static const _preview = 5;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final items = widget.items;
+    if (items.isEmpty) return const SizedBox.shrink();
+    final visible = _expanded ? items : items.take(_preview).toList();
+    final hiddenCount = items.length - _preview;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(widget.icon, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text('${widget.title} (${items.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],),
+            const SizedBox(height: 8),
+            ...visible.map((b) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(b.label, style: const TextStyle(fontWeight: FontWeight.w500)),
+                            if (b.sub != null && b.sub!.isNotEmpty)
+                              Text(b.sub!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(formatMinutes(b.minutes),
+                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSecondaryContainer),),
+                      ),
+                    ],
+                  ),
+                ),),
+            if (hiddenCount > 0)
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 18),
+                  label: Text(_expanded ? 'Show less' : 'Show more ($hiddenCount more)'),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 // ── Searchable picker ───────────────────────────────────

@@ -38,15 +38,43 @@ class _RequestTile extends StatelessWidget {
   const _RequestTile({required this.req});
   final AdjustmentRequest req;
 
+  static String _t(DateTime? d) => d != null ? NptTime.formatTime(d) : '—';
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final inT = req.proposedClockIn != null
-        ? NptTime.formatTime(req.proposedClockIn!)
-        : '—';
-    final outT = req.proposedClockOut != null
-        ? NptTime.formatTime(req.proposedClockOut!)
-        : '—';
+
+    Widget row(String label, String original, String proposed) {
+      final changed = original != proposed;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(children: [
+          SizedBox(
+            width: 86,
+            child: Text(label,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+          ),
+          Expanded(
+            child: Text(original,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  decoration: changed ? TextDecoration.lineThrough : null,
+                  color: changed ? theme.colorScheme.onSurfaceVariant : null,
+                ),),
+          ),
+          const Icon(Icons.arrow_forward, size: 12),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(proposed,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: changed ? FontWeight.w700 : FontWeight.normal,
+                  color: changed ? theme.colorScheme.primary : null,
+                ),),
+          ),
+        ],),
+      );
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -58,7 +86,7 @@ class _RequestTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     req.createdAt != null
-                        ? NptTime.formatDateShort(req.createdAt!)
+                        ? 'Requested ${NptTime.formatDateShort(req.createdAt!)}'
                         : 'Request',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
@@ -66,13 +94,34 @@ class _RequestTile extends StatelessWidget {
                 _StatusChip(status: req.effectiveStatus),
               ],
             ),
-            const SizedBox(height: 4),
-            Text('Proposed: $inT → $outT  ·  '
-                'break ${req.proposedBreakMinutes ?? 0}m, pause ${req.proposedPauseMinutes ?? 0}m',
-                style: theme.textTheme.bodySmall,),
+            const SizedBox(height: 8),
+            // Original -> Proposed comparison header.
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(children: [
+                const SizedBox(width: 86),
+                Expanded(
+                  child: Text('Original',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,),),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Text('Proposed',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,),),
+                ),
+              ],),
+            ),
+            row('Clock in', _t(req.originalClockIn), _t(req.proposedClockIn)),
+            row('Clock out', _t(req.originalClockOut), _t(req.proposedClockOut)),
+            row('Break', '${req.originalBreakMinutes ?? 0}m',
+                '${req.proposedBreakMinutes ?? 0}m',),
+            row('Pause', '${req.originalPauseMinutes ?? 0}m',
+                '${req.proposedPauseMinutes ?? 0}m',),
             if (req.reason.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 6),
                 child: Text('Reason: ${req.reason}',
                     style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,),),
@@ -82,7 +131,8 @@ class _RequestTile extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('Reviewer: ${req.reviewerComment}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,),),
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,),),
               ),
           ],
         ),

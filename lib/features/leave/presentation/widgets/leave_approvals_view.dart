@@ -20,7 +20,8 @@ class LeaveApprovalsView extends ConsumerStatefulWidget {
 
 class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
   String _status = 'pending';
-  String _month = 'all'; // 'all' or YYYY-MM (by leave start date)
+  // Default to the CURRENT month (user can still pick "All months").
+  late String _month = monthKeyFromDate(DateTime.now())!;
   String _employee = 'all'; // 'all' or user_id
   String _leaveType = 'all';
   String _search = '';
@@ -48,6 +49,7 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
         data: (all) {
           final months = {
             for (final r in all) monthKeyFromString(r.startDate),
+            monthKeyFromDate(DateTime.now()), // always offer the current month
           }.whereType<String>().toList();
           // Unique employees + leave types for the filter dropdowns (web parity).
           final employees = <String, String>{
@@ -83,28 +85,46 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              MonthFilterBar(
-                months: months,
-                selected: _month,
-                onChanged: (m) => setState(() => _month = m),
-              ),
+              // Row 1: month + CSV export side by side (compact).
+              Row(children: [
+                Expanded(
+                  child: MonthFilterBar(
+                    months: months,
+                    selected: _month,
+                    onChanged: (m) => setState(() => _month = m),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Export CSV',
+                  icon: const Icon(Icons.file_download_outlined),
+                  onPressed: list.isEmpty
+                      ? null
+                      : () => shareCsv('$_status-leaves', leaveApprovalsCsv(list)),
+                ),
+              ],),
               const SizedBox(height: 8),
+              // Row 2: search.
               TextField(
                 decoration: const InputDecoration(
                   isDense: true,
                   prefixIcon: Icon(Icons.search, size: 18),
                   hintText: 'Search name / type / reason',
+                  border: OutlineInputBorder(),
                 ),
                 onChanged: (v) => setState(() => _search = v),
               ),
               const SizedBox(height: 8),
+              // Row 3: employee + leave-type dropdowns.
               Row(children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _employee,
                     isExpanded: true,
                     decoration: const InputDecoration(
-                        labelText: 'Employee', isDense: true,),
+                        labelText: 'Employee',
+                        isDense: true,
+                        border: OutlineInputBorder(),),
                     items: [
                       const DropdownMenuItem(value: 'all', child: Text('All employees')),
                       for (final e in employees.entries)
@@ -119,7 +139,9 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
                     initialValue: _leaveType,
                     isExpanded: true,
                     decoration: const InputDecoration(
-                        labelText: 'Leave type', isDense: true,),
+                        labelText: 'Leave type',
+                        isDense: true,
+                        border: OutlineInputBorder(),),
                     items: [
                       const DropdownMenuItem(value: 'all', child: Text('All types')),
                       for (final t in leaveTypes)
@@ -129,7 +151,8 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
                   ),
                 ),
               ],),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              // Row 4: status segments.
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'pending', label: Text('Pending (${counts['pending']})')),
@@ -140,17 +163,6 @@ class _LeaveApprovalsViewState extends ConsumerState<LeaveApprovalsView> {
                 onSelectionChanged: (s) => setState(() => _status = s.first),
               ),
               const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Export CSV'),
-                  onPressed: list.isEmpty
-                      ? null
-                      : () => shareCsv('$_status-leaves', leaveApprovalsCsv(list)),
-                ),
-              ),
-              const SizedBox(height: 4),
               if (list.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 40),

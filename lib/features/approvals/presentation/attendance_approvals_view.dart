@@ -106,24 +106,125 @@ class _AttendanceApprovalsViewState
   }
 
   Future<void> _override(AdjustmentRequest r) async {
-    final approve = await showDialog<bool>(
+    // Rich override dialog: original vs proposed values, the current
+    // decision + reviewer comment, and an override comment field.
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Override decision'),
-        content: const Text('Override the previous review for this request?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Reject')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Approve')),
-        ],
-      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        String t(DateTime? d) => d == null ? '—' : NptTime.formatTime(d);
+        Widget row(String label, String original, String proposed) {
+          final changed = original != proposed;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(children: [
+              SizedBox(
+                width: 78,
+                child: Text(label,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+              ),
+              Expanded(
+                child: Text(original,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      decoration: changed ? TextDecoration.lineThrough : null,
+                      color: changed ? theme.colorScheme.onSurfaceVariant : null,
+                    ),),
+              ),
+              const Icon(Icons.arrow_forward, size: 12),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(proposed,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: changed ? FontWeight.w700 : FontWeight.normal,
+                      color: changed ? theme.colorScheme.primary : null,
+                    ),),
+              ),
+            ],),
+          );
+        }
+
+        return AlertDialog(
+          title: const Text('Override decision'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(r.requesterName ?? 'Employee',
+                        style: const TextStyle(fontWeight: FontWeight.w600),),
+                  ),
+                  _StatusChip(status: r.overrideStatus ?? r.status),
+                ],),
+                const SizedBox(height: 10),
+                Row(children: [
+                  const SizedBox(width: 78),
+                  Expanded(
+                    child: Text('Original',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,),),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Text('Proposed',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,),),
+                  ),
+                ],),
+                row('Clock in', t(r.originalClockIn), t(r.proposedClockIn)),
+                row('Clock out', t(r.originalClockOut), t(r.proposedClockOut)),
+                row('Break', '${r.originalBreakMinutes ?? 0}m',
+                    '${r.proposedBreakMinutes ?? 0}m',),
+                row('Pause', '${r.originalPauseMinutes ?? 0}m',
+                    '${r.proposedPauseMinutes ?? 0}m',),
+                if (r.reason.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Reason: ${r.reason}', style: theme.textTheme.bodySmall),
+                ],
+                if (r.reviewerComment?.isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text('Reviewer: ${r.reviewerComment}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontStyle: FontStyle.italic,),),
+                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Override comment (optional)',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Reject'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Approve'),
+            ),
+          ],
+        );
+      },
     );
-    if (approve == null) return;
-    final comment = await _commentDialog(title: 'Override comment', requireComment: false);
-    if (comment == null) return;
+    if (result == null) return;
+    final comment = controller.text.trim();
     try {
       await ref.read(attendanceRepositoryProvider).overrideAdjustment(
-            r.id, approved: approve, comment: comment.isEmpty ? null : comment,);
+            r.id, approved: result, comment: comment.isEmpty ? null : comment,);
       ref.invalidate(teamAdjustmentsProvider);
       _toast('Override saved.');
     } catch (e) {
@@ -197,6 +298,38 @@ class _AdjustmentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    Widget cmp(String label, String original, String proposed) {
+      final changed = original != proposed;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(children: [
+          SizedBox(
+            width: 78,
+            child: Text(label,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+          ),
+          Expanded(
+            child: Text(original,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  decoration: changed ? TextDecoration.lineThrough : null,
+                  color: changed ? theme.colorScheme.onSurfaceVariant : null,
+                ),),
+          ),
+          const Icon(Icons.arrow_forward, size: 12),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(proposed,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: changed ? FontWeight.w700 : FontWeight.normal,
+                  color: changed ? theme.colorScheme.primary : null,
+                ),),
+          ),
+        ],),
+      );
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -212,13 +345,36 @@ class _AdjustmentCard extends StatelessWidget {
                 _StatusChip(status: req.overrideStatus ?? req.status),
               ],
             ),
-            const SizedBox(height: 6),
-            _kv(theme, 'Clock in', '${_t(req.originalClockIn)} → ${_t(req.proposedClockIn)}'),
-            _kv(theme, 'Clock out', '${_t(req.originalClockOut)} → ${_t(req.proposedClockOut)}'),
-            _kv(theme, 'Break (min)',
-                '${req.originalBreakMinutes ?? '—'} → ${req.proposedBreakMinutes ?? '—'}',),
-            _kv(theme, 'Pause (min)',
-                '${req.originalPauseMinutes ?? '—'} → ${req.proposedPauseMinutes ?? '—'}',),
+            if (req.createdAt != null)
+              Text('Requested ${NptTime.formatDateShort(req.createdAt!)}',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+            const SizedBox(height: 8),
+            // Original / Proposed comparison (full details for every status,
+            // not just proposed values).
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(children: [
+                const SizedBox(width: 78),
+                Expanded(
+                  child: Text('Original',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,),),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Text('Proposed',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,),),
+                ),
+              ],),
+            ),
+            cmp('Clock in', _t(req.originalClockIn), _t(req.proposedClockIn)),
+            cmp('Clock out', _t(req.originalClockOut), _t(req.proposedClockOut)),
+            cmp('Break', '${req.originalBreakMinutes ?? 0}m',
+                '${req.proposedBreakMinutes ?? 0}m',),
+            cmp('Pause', '${req.originalPauseMinutes ?? 0}m',
+                '${req.proposedPauseMinutes ?? 0}m',),
             if (req.reason.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -228,8 +384,9 @@ class _AdjustmentCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text('Reviewer: ${req.reviewerComment}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,),),
               ),
             if (onApprove != null || onReject != null || onOverride != null)
               Padding(
@@ -264,19 +421,6 @@ class _AdjustmentCard extends StatelessWidget {
     );
   }
 
-  Widget _kv(ThemeData theme, String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
-        child: Row(
-          children: [
-            SizedBox(
-                width: 110,
-                child: Text(k,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),),
-            Expanded(child: Text(v, style: theme.textTheme.bodySmall)),
-          ],
-        ),
-      );
 }
 
 class _StatusChip extends StatelessWidget {

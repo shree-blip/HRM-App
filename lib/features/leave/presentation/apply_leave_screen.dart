@@ -275,8 +275,21 @@ class _ApplyLeaveScreenState extends ConsumerState<ApplyLeaveScreen> {
         if (picked != null) onPick(picked);
       },
       child: InputDecorator(
-        decoration: InputDecoration(labelText: label),
-        child: Text(value != null ? formatDateKey(value) : 'Select date'),
+        // isEmpty floats the label above the value instead of letting it
+        // overlap/overflow the selection box (previous responsiveness bug).
+        isEmpty: value == null,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'Select date',
+          isDense: true,
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
+        child: Text(
+          value != null ? formatDateKey(value) : '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

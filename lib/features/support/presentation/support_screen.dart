@@ -306,6 +306,11 @@ void _showBugScreenshots(
   );
 }
 
+// TODO(grievance-google-form): the web GrievanceSection embeds a Google Form.
+// Planned for a later phase — when enabled, embed this URL in a WebView inside
+// the grievance flow. DO NOT show it in the app yet.
+// https://docs.google.com/forms/d/e/1FAIpQLSfERST8abuzNCQUbqNuhVIARAqRhnjqIp3P300pMTXfwDRKEQ/viewform?embedded=true
+
 void _showGrievanceForm(BuildContext context, WidgetRef ref) {
   final title = TextEditingController();
   final details = TextEditingController();
