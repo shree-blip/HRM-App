@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -163,6 +165,11 @@ class TimeTrackerController extends Notifier<TimeTrackerState> {
       // Refresh stats/history after any change.
       ref.invalidate(attendanceStatsProvider);
       ref.invalidate(attendanceHistoryProvider);
+      // Live Attendance must reflect the action INSTANTLY — refresh it
+      // directly instead of waiting for realtime/poll (root cause of the
+      // ~30s lag: the 60s fallback poll was doing the updating).
+      ref.read(liveAttendanceProvider.notifier).refresh();
+      ref.invalidate(fullActivityProvider);
     } catch (e) {
       state = state.copyWith(busy: false);
       rethrow;
@@ -291,16 +298,27 @@ class LiveAttendanceController extends AsyncNotifier<LiveData> {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'attendance_logs',
-          callback: (_) => _refresh(),
+          callback: (payload) {
+            debugPrint('[live-attendance] attendance_logs ${payload.eventType}');
+            _refresh();
+          },
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'attendance_break_sessions',
-          callback: (_) => _refresh(),
+          callback: (payload) {
+            debugPrint('[live-attendance] break_sessions ${payload.eventType}');
+            _refresh();
+          },
         )
-        .subscribe();
-    _timer ??= Timer.periodic(const Duration(seconds: 60), (_) => _refresh());
+        .subscribe((status, error) {
+          debugPrint('[live-attendance] channel status: $status'
+              '${error != null ? ' error: $error' : ''}');
+        });
+    // Fallback poll only — realtime + action-driven refresh are the fast
+    // paths; this just catches anything missed.
+    _timer ??= Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
   }
 
   Future<void> _refresh() async {
