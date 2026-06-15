@@ -39,8 +39,65 @@ class AttendanceRepository {
       throw Exception(data['error'].toString());
     }
     final logMap = (data is Map) ? data['log'] : null;
+    // Shift summary to the user after clock-out (Phase 2a gap-fill). The edge
+    // function returns a null log when it closes the shift, so fetch the
+    // just-closed log to build the summary.
+    if (action == 'clock_out') {
+      await _notifyClockOutSummaryAfterClose(
+        logMap is Map ? logMap.cast<String, dynamic>() : null,
+      );
+    }
     if (logMap == null) return null;
     return AttendanceLog.fromMap((logMap as Map).cast<String, dynamic>());
+  }
+
+  /// Builds the clock-out summary from the returned log when present, otherwise
+  /// from the user's most recently closed log fetched from the table.
+  Future<void> _notifyClockOutSummaryAfterClose(
+    Map<String, dynamic>? returnedLog,
+  ) async {
+    try {
+      AttendanceLog? log;
+      if (returnedLog != null && returnedLog['clock_out'] != null) {
+        log = AttendanceLog.fromMap(returnedLog);
+      } else {
+        final uid = supabase.auth.currentUser?.id;
+        if (uid == null) return;
+        final rows = await supabase
+            .from('attendance_logs')
+            .select(_logCols)
+            .eq('user_id', uid)
+            .not('clock_out', 'is', null)
+            .order('clock_out', ascending: false)
+            .limit(1);
+        if (rows.isEmpty) return;
+        log = AttendanceLog.fromMap((rows.first).cast<String, dynamic>());
+      }
+      await _notifyClockOutSummary(log);
+    } catch (_) {
+      // Best-effort; never block clock-out on a notification failure.
+    }
+  }
+
+  Future<void> _notifyClockOutSummary(AttendanceLog log) async {
+    try {
+      final net = log.netHours();
+      final hrs = net == net.roundToDouble()
+          ? '${net.toInt()}h'
+          : '${net.toStringAsFixed(1)}h';
+      await supabase.rpc('create_notification', params: {
+        'p_user_id': log.userId,
+        'p_title': '✅ Shift Complete',
+        'p_message':
+            'You worked $hrs · break ${log.totalBreakMinutes}m · pause ${log.totalPauseMinutes}m.',
+        // notifications.type is a severity enum (info|warning|success|error),
+        // not a category — the category lives in the title/message.
+        'p_type': 'success',
+        'p_link': '/attendance',
+      },);
+    } catch (_) {
+      // Best-effort; never block clock-out on a notification failure.
+    }
   }
 
   /// The user's current open log (clock_out is null), if any.
@@ -230,6 +287,16 @@ class AttendanceRepository {
         'original_pause_minutes': originalPauseMinutes,
     });
     await _notifyManagers(uid);
+    // Confirmation to the requester (Phase 2a gap-fill).
+    try {
+      await supabase.rpc('create_notification', params: {
+        'p_user_id': uid,
+        'p_title': '🕒 Adjustment Request Sent',
+        'p_message': 'Your attendance correction request was submitted for review.',
+        'p_type': 'info',
+        'p_link': '/attendance',
+      },);
+    } catch (_) {}
   }
 
   Future<void> _notifyManagers(String uid) async {
@@ -269,7 +336,7 @@ class AttendanceRepository {
           'p_user_id': mUid,
           'p_title': '🕒 Attendance Adjustment Request',
           'p_message': 'A team member requested an attendance correction.',
-          'p_type': 'attendance',
+          'p_type': 'info',
           'p_link': '/approvals',
         },);
       }

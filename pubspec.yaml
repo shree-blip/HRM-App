@@ -52,6 +52,10 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.3
 
+  # Local/tray notifications mirrored from the notifications table (Phase 2a;
+  # no Firebase/FCM yet — killed-app push is Phase 2b).
+  flutter_local_notifications: ^18.0.1
+
   cupertino_icons: ^1.0.8
 
   intl: any
