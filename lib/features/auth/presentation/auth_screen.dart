@@ -10,10 +10,11 @@ import '../../../app/theme/app_theme.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/validation/validators.dart';
+import 'widgets/auth_widgets.dart';
 
 /// Combined Sign In / Sign Up screen, mobile-first. Mirrors the behaviour of
 /// the React `Auth.tsx` (allowlist email check, readonly name autofill,
-/// deactivation handling) with a clean tabbed mobile layout.
+/// deactivation handling) with a clean, premium card layout.
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
 
@@ -21,9 +22,9 @@ class AuthScreen extends ConsumerStatefulWidget {
   ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends ConsumerState<AuthScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+class _AuthScreenState extends ConsumerState<AuthScreen> {
+  // 0 = Sign In, 1 = Sign Up.
+  int _mode = 0;
 
   final _loginFormKey = GlobalKey<FormState>();
   final _signupFormKey = GlobalKey<FormState>();
@@ -56,7 +57,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   @override
   void dispose() {
     _debounce?.cancel();
-    _tabs.dispose();
     _loginEmail.dispose();
     _loginPassword.dispose();
     _signupEmail.dispose();
@@ -171,11 +171,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     }
   }
 
-  void _toast(String message) {
+  void _toast(String message, {bool isError = true}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showAuthSnack(context, message, isError: isError);
   }
 
   @override
@@ -196,45 +194,55 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     );
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.slate900, AppColors.slate800, AppColors.slate900],
-          ),
-        ),
+      body: AuthGradientBackground(
         child: SafeArea(
-          child: Column(
-            children: [
-              const _Header(),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: Column(
-                    children: [
-                      TabBar(
-                        controller: _tabs,
-                        tabs: const [Tab(text: 'Sign In'), Tab(text: 'Sign Up')],
+          // Top-anchored + horizontally centred so the segmented switch never
+          // shifts when the form height changes; the scroll view keeps it
+          // keyboard-safe and overflow-free on small devices.
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const AuthBrandMark(),
+                    const SizedBox(height: 30),
+                    AuthCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AuthSegmentedSwitch(
+                            index: _mode,
+                            labels: const ['Sign In', 'Sign Up'],
+                            onChanged: (i) => setState(() => _mode = i),
+                          ),
+                          const SizedBox(height: 24),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            alignment: Alignment.topCenter,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              child: _mode == 0
+                                  ? KeyedSubtree(
+                                      key: const ValueKey('login'),
+                                      child: _buildLoginForm(),
+                                    )
+                                  : KeyedSubtree(
+                                      key: const ValueKey('signup'),
+                                      child: _buildSignupForm(),
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: TabBarView(
-                          controller: _tabs,
-                          children: [
-                            _buildLoginForm(),
-                            _buildSignupForm(),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -242,138 +250,146 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   }
 
   Widget _buildLoginForm() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-      child: Form(
-        key: _loginFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextFormField(
-              controller: _loginEmail,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                hintText: 'you@company.com',
-                prefixIcon: Icon(Icons.mail_outline),
-              ),
-              validator: Validators.email,
+    return Form(
+      key: _loginFormKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthHeading(
+            title: 'Welcome back',
+            subtitle: 'Sign in to continue to your Focus HRM workspace.',
+          ),
+          const SizedBox(height: 22),
+          AuthTextField(
+            controller: _loginEmail,
+            label: 'Email',
+            hint: 'you@company.com',
+            icon: Icons.mail_outline,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            validator: Validators.email,
+          ),
+          const SizedBox(height: 16),
+          AuthTextField(
+            controller: _loginPassword,
+            label: 'Password',
+            icon: Icons.lock_outline,
+            obscureText: _obscureLogin,
+            autofillHints: const [AutofillHints.password],
+            suffix: IconButton(
+              icon: Icon(_obscureLogin ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => setState(() => _obscureLogin = !_obscureLogin),
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _loginPassword,
-              obscureText: _obscureLogin,
-              autofillHints: const [AutofillHints.password],
-              decoration: InputDecoration(
-                labelText: 'Password',
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscureLogin ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () => setState(() => _obscureLogin = !_obscureLogin),
-                ),
-              ),
-              validator: (v) => Validators.requiredField(v, label: 'Password'),
-              onFieldSubmitted: (_) => _busy ? null : _submitLogin(),
+            validator: (v) => Validators.requiredField(v, label: 'Password'),
+            onFieldSubmitted: (_) => _busy ? null : _submitLogin(),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: AuthLinkButton(
+              label: 'Forgot password?',
+              onPressed: () => context.push(Routes.forgotPassword),
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => context.push(Routes.forgotPassword),
-                child: const Text('Forgot password?'),
-              ),
-            ),
-            const SizedBox(height: 4),
-            FilledButton(
-              onPressed: _busy ? null : _submitLogin,
-              child: _busy
-                  ? const _BtnSpinner()
-                  : const Text('Sign In'),
-            ),
-            const SizedBox(height: 12),
-            _GoogleComingSoonButton(busy: _busy, onTap: _toast),
-          ],
-        ),
+          ),
+          const SizedBox(height: 4),
+          AuthPrimaryButton(
+            label: 'Sign In',
+            busy: _busy,
+            onPressed: _submitLogin,
+          ),
+          const SizedBox(height: 18),
+          const AuthOrDivider(),
+          const SizedBox(height: 18),
+          AuthOutlineButton(
+            label: 'Continue with Google',
+            icon: Icons.g_mobiledata,
+            onPressed: _busy
+                ? null
+                : () => _toast(
+                      'Google sign-in is coming in a later phase.',
+                      isError: false,
+                    ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildSignupForm() {
     final valid = _emailValid == true;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-      child: Form(
-        key: _signupFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextFormField(
-              controller: _signupEmail,
-              keyboardType: TextInputType.emailAddress,
-              decoration: InputDecoration(
-                labelText: 'Work Email',
-                hintText: 'you@company.com',
-                prefixIcon: const Icon(Icons.mail_outline),
-                suffixIcon: _emailSuffix(),
-                errorText: _emailError,
-              ),
-              validator: Validators.email,
+    return Form(
+      key: _signupFormKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthHeading(
+            title: 'Create your account',
+            subtitle: 'Sign up with your authorized work email to get started.',
+          ),
+          const SizedBox(height: 22),
+          AuthTextField(
+            controller: _signupEmail,
+            label: 'Work Email',
+            hint: 'you@company.com',
+            icon: Icons.mail_outline,
+            keyboardType: TextInputType.emailAddress,
+            suffix: _emailSuffix(),
+            errorText: _emailError,
+            validator: Validators.email,
+          ),
+          const SizedBox(height: 16),
+          if (valid) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: AuthTextField(
+                    controller: _firstName,
+                    label: 'First Name',
+                    icon: Icons.badge_outlined,
+                    readOnly: true,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AuthTextField(
+                    controller: _lastName,
+                    label: 'Last Name',
+                    readOnly: true,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-            if (valid) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _firstName,
-                      readOnly: true,
-                      decoration: const InputDecoration(labelText: 'First Name'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _lastName,
-                      readOnly: true,
-                      decoration: const InputDecoration(labelText: 'Last Name'),
-                    ),
-                  ),
-                ],
+            AuthTextField(
+              controller: _signupPassword,
+              label: 'Password',
+              icon: Icons.lock_outline,
+              obscureText: _obscureSignup,
+              helperText: 'Min 8 chars, upper, lower, number & special char',
+              helperMaxLines: 2,
+              suffix: IconButton(
+                icon: Icon(_obscureSignup ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => setState(() => _obscureSignup = !_obscureSignup),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _signupPassword,
-                obscureText: _obscureSignup,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  helperText: 'Min 8 chars, upper, lower, number & special char',
-                  helperMaxLines: 2,
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscureSignup ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _obscureSignup = !_obscureSignup),
-                  ),
-                ),
-                validator: Validators.password,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _signupConfirm,
-                obscureText: _obscureSignup,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm Password',
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-                validator: (v) => Validators.confirmPassword(v, _signupPassword.text),
-              ),
-              const SizedBox(height: 20),
-            ],
-            FilledButton(
-              onPressed: (_busy || !valid) ? null : _submitSignup,
-              child: _busy ? const _BtnSpinner() : const Text('Create Account'),
+              validator: Validators.password,
             ),
+            const SizedBox(height: 16),
+            AuthTextField(
+              controller: _signupConfirm,
+              label: 'Confirm Password',
+              icon: Icons.lock_outline,
+              obscureText: _obscureSignup,
+              validator: (v) => Validators.confirmPassword(v, _signupPassword.text),
+            ),
+            const SizedBox(height: 22),
           ],
-        ),
+          AuthPrimaryButton(
+            label: 'Create Account',
+            busy: _busy,
+            onPressed: valid ? _submitSignup : null,
+          ),
+        ],
       ),
     );
   }
@@ -385,75 +401,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         child: SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryDark),
         ),
       );
     }
     if (_emailValid == true) {
-      return const Icon(Icons.check_circle, color: AppColors.success);
+      return const Icon(Icons.check_circle, color: Color(0xFF6EE7B7));
     }
     if (_emailValid == false) {
-      return const Icon(Icons.error_outline, color: AppColors.destructive);
+      return const Icon(Icons.error_outline, color: Color(0xFFFF8A8A));
     }
     return null;
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      child: Column(
-        children: [
-          Image.asset('assets/images/focus-logo.png', width: 64, height: 64),
-          const SizedBox(height: 10),
-          const Text(
-            'FOCUS',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          Text(
-            'Human Resource Management',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BtnSpinner extends StatelessWidget {
-  const _BtnSpinner();
-  @override
-  Widget build(BuildContext context) => const SizedBox(
-        height: 22,
-        width: 22,
-        child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
-      );
-}
-
-/// Placeholder for Google OAuth (deferred to a later phase per the plan).
-class _GoogleComingSoonButton extends StatelessWidget {
-  const _GoogleComingSoonButton({required this.busy, required this.onTap});
-  final bool busy;
-  final void Function(String) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: busy ? null : () => onTap('Google sign-in is coming in a later phase.'),
-      icon: const Icon(Icons.g_mobiledata, size: 28),
-      label: const Text('Continue with Google'),
-    );
   }
 }
