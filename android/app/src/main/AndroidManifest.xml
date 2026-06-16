@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for all network/Supabase calls. Debug builds auto-add this via
+         the debug manifest, but release builds need it declared here. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Local/tray notifications (Android 13+ runtime permission). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
