@@ -1,0 +1,12 @@
+# TEMPLATE ONLY — safe to commit. Contains NO real secrets.
+#
+# To enable release signing:
+#   1. Copy this file to  android/key.properties   (that real file is gitignored)
+#   2. Replace the placeholder values below with your own.
+#
+# NEVER commit android/key.properties or the keystore (.jks). They are gitignored.
+
+storePassword=@A123pple#%
+keyPassword=@Na123pple%%
+keyAlias=upload
+storeFile=D:/keys/upload-keystore.jks
