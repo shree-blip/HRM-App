@@ -18,6 +18,13 @@ workflows:
       #   - android_keystore
       #   - firebase   # FIREBASE_APP_ID_ANDROID, FIREBASE_TOKEN (distribution)
     scripts:
+      - name: Generate .env (real values from env vars, else placeholders)
+        script: |
+          # .env is gitignored, so CI must create it. Set SUPABASE_URL and
+          # SUPABASE_ANON_KEY as Codemagic env vars for a working distributable
+          # build; otherwise placeholders let the compile/verify build pass.
+          echo "SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}" > .env
+          echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder-anon-key}" >> .env
       - name: Flutter clean and dependencies
         script: |
           flutter clean
@@ -77,6 +84,13 @@ workflows:
       # groups:
       #   - ios_signing
     scripts:
+      - name: Generate .env (real values from env vars, else placeholders)
+        script: |
+          # .env is gitignored, so CI must create it. Set SUPABASE_URL and
+          # SUPABASE_ANON_KEY as Codemagic env vars for a working distributable
+          # build; otherwise placeholders let the compile/verify build pass.
+          echo "SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}" > .env
+          echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder-anon-key}" >> .env
       - name: Flutter clean and dependencies
         script: |
           flutter clean
