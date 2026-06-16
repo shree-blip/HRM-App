@@ -102,21 +102,27 @@ workflows:
         script: |
           flutter analyze
           flutter test
-      - name: Build (no-codesign verifies compilation without Apple credentials)
+      - name: Build unsigned IPA (free sideload via Sideloadly/AltStore)
         script: |
-          # SAFE DEFAULT: compiles the iOS app with no signing — proves the
-          # build is green even before Apple credentials exist.
+          # Compile with no signing (no Apple account needed), then package the
+          # .app into an UNSIGNED .ipa. Install on your OWN iPhone for free with
+          # Sideloadly/AltStore + a free Apple ID (re-signs locally, 7-day expiry).
           flutter build ios --release --no-codesign
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r "$CM_BUILD_DIR/FocusHRM-unsigned.ipa" Payload >/dev/null
+          echo "Unsigned IPA ready: FocusHRM-unsigned.ipa"
           #
-          # AFTER you add Apple signing in the Codemagic dashboard, replace the
-          # line above with automatic signing + a real IPA:
+          # FOR REAL TESTER DISTRIBUTION (needs $99 Apple Developer + App Store
+          # Connect signing in the Codemagic dashboard), replace the steps above
+          # with automatic signing + a real signed IPA:
           #   xcode-project use-profiles
-          #   flutter build ipa --release \
-          #     --export-options-plist=/Users/builder/export_options.plist
+          #   flutter build ipa --release
     artifacts:
+      - FocusHRM-unsigned.ipa
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - flutter_drive.log
     # publishing:
     #   # OPTIONAL after a signed IPA exists: TestFlight or Firebase App
     #   # Distribution. For App Store Connect, add the api key integration; for
