@@ -3,6 +3,16 @@
 .env
 *.env.local
 
+# ── Firebase / Google secrets (never commit) ──────────────
+# OAuth client secrets, service-account / admin SDK keys.
+client_secret*.json
+**/client_secret*.json
+*service-account*.json
+*serviceAccount*.json
+*-adminsdk-*.json
+# NOTE: google-services.json / GoogleService-Info.plist are NOT used yet (no
+# Firebase SDK in the app). If added later for an SDK, decide commit policy then.
+
 # ── Flutter / Dart ────────────────────────────────────────
 .dart_tool/
 .flutter-plugins
