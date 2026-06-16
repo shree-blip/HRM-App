@@ -1,0 +1,114 @@
+# Codemagic CI/CD for Focus HRM (Flutter) — builds Android + iOS from this
+# SAME GitHub repo. No secrets live in this file. All signing keys, passwords
+# and API keys are stored in the Codemagic dashboard (Environment variables /
+# groups) and referenced here by name only. See CODEMAGIC_SETUP.md.
+
+workflows:
+  # ── Android: analyze, test, build APK + AAB ───────────────────────────────
+  android-workflow:
+    name: Android (APK + AAB)
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        # Create this group in the Codemagic dashboard. Optional for an
+        # (unsigned/debug-signed) verification build; REQUIRED for a real
+        # release-signed APK/AAB. Variables expected:
+        #   CM_KEYSTORE (base64 of upload-keystore.jks), CM_KEYSTORE_PASSWORD,
+        #   CM_KEY_ALIAS, CM_KEY_PASSWORD
+        - android_keystore
+        # - firebase   # FIREBASE_APP_ID_ANDROID, FIREBASE_TOKEN (for distribution)
+    scripts:
+      - name: Flutter clean and dependencies
+        script: |
+          flutter clean
+          flutter pub get
+      - name: Analyze
+        script: flutter analyze
+      - name: Test
+        script: flutter test
+      - name: Configure release signing (only if keystore vars are set)
+        script: |
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/upload-keystore.jks"
+            cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_BUILD_DIR/upload-keystore.jks
+          EOF
+            echo "Release signing configured from Codemagic variables."
+          else
+            echo "No keystore variables set -> build will be DEBUG-signed (fine for testing, not for Play)."
+          fi
+      - name: Build APK (split per ABI)
+        script: flutter build apk --release --split-per-abi
+      - name: Build AAB (for Play Store)
+        script: flutter build appbundle --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
+      - build/**/outputs/**/mapping.txt
+    # publishing:
+    #   # OPTIONAL: distribute to testers automatically. Add FIREBASE_TOKEN and
+    #   # FIREBASE_APP_ID_ANDROID in the dashboard, then uncomment.
+    #   scripts:
+    #     - name: Firebase App Distribution (Android)
+    #       script: |
+    #         firebase appdistribution:distribute \
+    #           build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+    #           --app "$FIREBASE_APP_ID_ANDROID" \
+    #           --groups testers \
+    #           --token "$FIREBASE_TOKEN" \
+    #           --release-notes "Codemagic build $CM_BUILD_ID"
+
+  # ── iOS: build on a cloud Mac (cannot be built on Windows) ────────────────
+  ios-workflow:
+    name: iOS (IPA)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        # Create this group in the Codemagic dashboard. Required for a SIGNED
+        # IPA. Recommended (App Store Connect API key based signing):
+        #   APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_ISSUER_ID,
+        #   APP_STORE_CONNECT_PRIVATE_KEY, CERTIFICATE_PRIVATE_KEY,
+        #   BUNDLE_ID (e.g. com.focusyourfinance.hrmFocusFlutter)
+        - ios_signing
+    scripts:
+      - name: Flutter clean and dependencies
+        script: |
+          flutter clean
+          flutter pub get
+      - name: CocoaPods install
+        script: |
+          cd ios && pod install
+      - name: Analyze and test
+        script: |
+          flutter analyze
+          flutter test
+      - name: Build (no-codesign verifies compilation without Apple credentials)
+        script: |
+          # SAFE DEFAULT: compiles the iOS app with no signing — proves the
+          # build is green even before Apple credentials exist.
+          flutter build ios --release --no-codesign
+          #
+          # AFTER you add Apple signing in the Codemagic dashboard, replace the
+          # line above with automatic signing + a real IPA:
+          #   xcode-project use-profiles
+          #   flutter build ipa --release \
+          #     --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    # publishing:
+    #   # OPTIONAL after a signed IPA exists: TestFlight or Firebase App
+    #   # Distribution. For App Store Connect, add the api key integration; for
+    #   # Firebase, add FIREBASE_TOKEN + FIREBASE_APP_ID_IOS, then:
+    #   #   firebase appdistribution:distribute build/ios/ipa/*.ipa \
+    #   #     --app "$FIREBASE_APP_ID_IOS" --groups testers --token "$FIREBASE_TOKEN"
