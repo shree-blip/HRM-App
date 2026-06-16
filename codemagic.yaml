@@ -11,14 +11,12 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: stable
-      groups:
-        # Create this group in the Codemagic dashboard. Optional for an
-        # (unsigned/debug-signed) verification build; REQUIRED for a real
-        # release-signed APK/AAB. Variables expected:
-        #   CM_KEYSTORE (base64 of upload-keystore.jks), CM_KEYSTORE_PASSWORD,
-        #   CM_KEY_ALIAS, CM_KEY_PASSWORD
-        - android_keystore
-        # - firebase   # FIREBASE_APP_ID_ANDROID, FIREBASE_TOKEN (for distribution)
+      # To release-sign, create an "android_keystore" group in the Codemagic
+      # dashboard (CM_KEYSTORE [base64 of upload-keystore.jks],
+      # CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD) then uncomment:
+      # groups:
+      #   - android_keystore
+      #   - firebase   # FIREBASE_APP_ID_ANDROID, FIREBASE_TOKEN (distribution)
     scripts:
       - name: Flutter clean and dependencies
         script: |
@@ -72,13 +70,12 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-      groups:
-        # Create this group in the Codemagic dashboard. Required for a SIGNED
-        # IPA. Recommended (App Store Connect API key based signing):
-        #   APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_ISSUER_ID,
-        #   APP_STORE_CONNECT_PRIVATE_KEY, CERTIFICATE_PRIVATE_KEY,
-        #   BUNDLE_ID (e.g. com.focusyourfinance.hrmFocusFlutter)
-        - ios_signing
+      # To produce a SIGNED IPA, create an "ios_signing" group in the Codemagic
+      # dashboard (App Store Connect API key: APP_STORE_CONNECT_KEY_IDENTIFIER,
+      # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_PRIVATE_KEY,
+      # CERTIFICATE_PRIVATE_KEY, BUNDLE_ID) then uncomment:
+      # groups:
+      #   - ios_signing
     scripts:
       - name: Flutter clean and dependencies
         script: |
