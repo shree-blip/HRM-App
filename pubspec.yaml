@@ -68,10 +68,14 @@ dev_dependencies:
 # Launcher icon generated from the provided brand logo (512x512).
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   image_path: assets/images/focus-logo.png
   adaptive_icon_background: "#0E1F3D"
   adaptive_icon_foreground: assets/images/focus-logo.png
+  # iOS icons cannot have transparency (Apple shows blank/black otherwise),
+  # so flatten the logo onto the brand navy background.
+  remove_alpha_ios: true
+  background_color_ios: "#0E1F3D"
 
 flutter:
   uses-material-design: true
