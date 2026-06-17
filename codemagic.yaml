@@ -77,6 +77,8 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      groups:
+        - supabase   # SUPABASE_URL, SUPABASE_ANON_KEY (baked into .env at build)
       # To produce a SIGNED IPA, create an "ios_signing" group in the Codemagic
       # dashboard (App Store Connect API key: APP_STORE_CONNECT_KEY_IDENTIFIER,
       # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_PRIVATE_KEY,
