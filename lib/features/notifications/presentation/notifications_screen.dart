@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../announcements/data/announcement_models.dart';
@@ -20,6 +21,7 @@ class _Feed {
     this.createdAt,
     this.publisherName,
     this.notifId,
+    this.link,
   });
   final String id;
   final String title;
@@ -31,6 +33,7 @@ class _Feed {
   final DateTime? createdAt;
   final String? publisherName;
   final String? notifId; // real notification id (null for announcements)
+  final String? link; // deep-link target (web handleNotificationClick)
 }
 
 /// Notifications (Critical Fix 2): list + filters (All/Unread/Announcements),
@@ -78,6 +81,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           isRead: n.isRead,
           createdAt: n.createdAt,
           notifId: n.id,
+          link: n.link,
         ),
     ];
     final all = [
@@ -165,6 +169,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       if (!f.isAnnouncement && f.notifId != null) {
         ref.read(notificationsControllerProvider.notifier).markAsRead(f.notifId!);
       }
+      // Deep-link to the relevant screen (mirrors web handleNotificationClick).
+      final link = f.link;
+      if (link != null && link.isNotEmpty) context.go(link);
     }
 
     return Card(

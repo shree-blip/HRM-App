@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../profile/data/profile_models.dart';
@@ -283,6 +284,10 @@ class _SecurityTabState extends ConsumerState<_SecurityTab> {
   }
 
   Future<void> _update() async {
+    if (_current.text.isEmpty) {
+      setState(() => _error = 'Enter your current password.');
+      return;
+    }
     if (_new.text != _confirm.text) {
       setState(() => _error = "New password and confirmation must match.");
       return;
@@ -297,11 +302,13 @@ class _SecurityTabState extends ConsumerState<_SecurityTab> {
     });
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(settingsRepositoryProvider).changePassword(_new.text);
+      await ref.read(settingsRepositoryProvider).changePassword(_current.text, _new.text);
       _current.clear();
       _new.clear();
       _confirm.clear();
       messenger.showSnackBar(const SnackBar(content: Text('Password updated.')));
+    } on AuthException catch (_) {
+      setState(() => _error = 'Current password is incorrect.');
     } catch (e) {
       setState(() => _error = 'Failed: $e');
     } finally {

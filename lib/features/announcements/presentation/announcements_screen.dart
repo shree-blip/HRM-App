@@ -12,7 +12,10 @@ class AnnouncementsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canManage = canManageAnnouncements(ref);
+    // A user in the `announcement_publishers` allowlist can manage even without
+    // a managing role (web `isPublisher`); OR it with the role/permission check.
+    final isPublisher = ref.watch(isAnnouncementPublisherProvider).valueOrNull ?? false;
+    final canManage = canManageAnnouncements(ref) || isPublisher;
     // Live refresh on announcements changes (web shared realtime channel).
     ref.watch(announcementsRealtimeProvider);
     return DefaultTabController(

@@ -101,7 +101,8 @@ class _BugsTab extends ConsumerWidget {
                 _Card(
                   title: b.title,
                   badge: _Badge(b.status ?? 'open', bugStatusColors(b.status)),
-                  meta: 'Reported by ${b.reporterName ?? 'Employee'}',
+                  // Reporter identity is only shown to managers (web canViewAll).
+                  meta: canManage ? 'Reported by ${b.reporterName ?? 'Employee'}' : null,
                   subtitle: b.description,
                   onTap: () => _showBugDetail(context, ref, b, canManage),
                 ),
@@ -714,14 +715,14 @@ class _Card extends StatelessWidget {
   const _Card({
     required this.title,
     required this.badge,
-    required this.meta,
+    this.meta,
     this.subtitle,
     this.trailing,
     required this.onTap,
   });
   final String title;
   final Widget badge;
-  final String meta;
+  final String? meta;
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback onTap;
@@ -745,8 +746,10 @@ class _Card extends StatelessWidget {
                   badge,
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(meta, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              if (meta != null && meta!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(meta!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              ],
               if (subtitle != null && subtitle!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),

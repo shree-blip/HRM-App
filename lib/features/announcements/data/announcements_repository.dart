@@ -6,6 +6,17 @@ import 'announcement_models.dart';
 class AnnouncementsRepository {
   String get _uid => supabase.auth.currentUser!.id;
 
+  /// Whether the current user is listed in `announcement_publishers` (web's
+  /// `isPublisher` path: such users can manage announcements regardless of role).
+  Future<bool> isPublisher() async {
+    final row = await supabase
+        .from('announcement_publishers')
+        .select('id')
+        .eq('user_id', _uid)
+        .maybeSingle();
+    return row != null;
+  }
+
   Future<List<Announcement>> _enrich(List<Announcement> list) async {
     final ids = list.map((a) => a.createdBy).whereType<String>().toSet().toList();
     if (ids.isEmpty) return list;

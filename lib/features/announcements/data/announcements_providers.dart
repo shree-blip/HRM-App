@@ -19,6 +19,11 @@ final announcementHistoryProvider = FutureProvider.autoDispose<List<Announcement
   (ref) => ref.read(announcementsRepositoryProvider).history(),
 );
 
+/// Whether the current user is in the `announcement_publishers` allowlist.
+final isAnnouncementPublisherProvider = FutureProvider.autoDispose<bool>(
+  (ref) => ref.read(announcementsRepositoryProvider).isPublisher(),
+);
+
 /// Realtime refresh on announcements changes (web shared
 /// "announcements-realtime-shared" channel). Watched by AnnouncementsScreen.
 final announcementsRealtimeProvider = Provider.autoDispose<void>((ref) {

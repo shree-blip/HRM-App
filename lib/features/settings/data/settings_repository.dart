@@ -60,7 +60,15 @@ class SettingsRepository {
     }).eq('user_id', _uid);
   }
 
-  Future<void> changePassword(String newPassword) async {
+  /// Re-authenticates with the current password (web parity: prevents changing
+  /// the password without proving the current one), then updates it.
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    final email = supabase.auth.currentUser?.email;
+    if (email == null) {
+      throw const AuthException('No authenticated user.');
+    }
+    // Verify the current password by re-authenticating.
+    await supabase.auth.signInWithPassword(email: email, password: currentPassword);
     await supabase.auth.updateUser(UserAttributes(password: newPassword));
   }
 
