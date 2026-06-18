@@ -221,9 +221,13 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
             const SizedBox(height: 12),
-            _timeRow('Proposed clock-in', _fmt(_clockInNpt), () => _pick(true)),
+            _timeRow('Proposed clock-in', _fmt(_clockInNpt), () => _pick(true),
+                original: 'Current: ${_fmt(widget.log.clockIn.add(_off))}',),
             const SizedBox(height: 8),
-            _timeRow('Proposed clock-out', _fmt(_clockOutNpt), () => _pick(false)),
+            _timeRow('Proposed clock-out', _fmt(_clockOutNpt), () => _pick(false),
+                original: widget.log.clockOut != null
+                    ? 'Current: ${_fmt(widget.log.clockOut!.add(_off))}'
+                    : 'Current: ongoing',),
             const SizedBox(height: 12),
             // ── Break & Pause sessions (web parity) ──
             Row(
@@ -365,7 +369,7 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
     );
   }
 
-  Widget _timeRow(String label, String value, VoidCallback onEdit) {
+  Widget _timeRow(String label, String value, VoidCallback onEdit, {String? original}) {
     final theme = Theme.of(context);
     return Row(
       children: [
@@ -376,6 +380,12 @@ class _AdjustmentDialogState extends ConsumerState<_AdjustmentDialog> {
               Text(label,
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),),
+              if (original != null)
+                Text(original,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      decoration: TextDecoration.lineThrough,
+                    ),),
               Text(value,
                   style: const TextStyle(fontWeight: FontWeight.w600),),
             ],

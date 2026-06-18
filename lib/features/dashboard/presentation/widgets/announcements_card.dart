@@ -71,7 +71,11 @@ class _AnnouncementTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
+    return InkWell(
+      // Show full details in-place (bottom sheet); never navigate away.
+      onTap: () => _showDetail(context),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -108,8 +112,52 @@ class _AnnouncementTile extends StatelessWidget {
               ],
             ),
           ),
+          const Icon(Icons.chevron_right, size: 18),
         ],
       ),
+      ),
+    );
+  }
+
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(item.isPinned ? Icons.push_pin : Icons.campaign_outlined,
+                        size: 20, color: theme.colorScheme.primary,),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(item.title,
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      item.content.isEmpty ? 'No additional details.' : item.content,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

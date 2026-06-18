@@ -94,11 +94,17 @@ class _DateBar extends ConsumerWidget {
 }
 
 // ── My Log ──────────────────────────────────────────────
-class _MyLogView extends ConsumerWidget {
+class _MyLogView extends ConsumerStatefulWidget {
   const _MyLogView();
+  @override
+  ConsumerState<_MyLogView> createState() => _MyLogViewState();
+}
+
+class _MyLogViewState extends ConsumerState<_MyLogView> {
+  String _status = 'all'; // all | in_progress | on_hold | completed
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final date = ref.watch(selectedLogDateProvider);
     final async = ref.watch(myLogsProvider);
     return Column(
@@ -133,12 +139,54 @@ class _MyLogView extends ConsumerWidget {
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => ListView(children: [Padding(padding: const EdgeInsets.all(24), child: Text('Could not load.\n$e'))]),
-              data: (logs) => logs.isEmpty
-                  ? ListView(children: const [Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No log entries for this day.')))])
-                  : ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [for (final l in logs) _LogCard(log: l, editable: true)],
+              data: (logs) {
+                // Summary reflects the whole day (web: totals computed over all
+                // logs, not the filtered subset).
+                final totalMin = logs.fold<int>(0, (a, l) => a + l.timeSpentMinutes);
+                final inProgress = logs.where((l) => l.status == 'in_progress').length;
+                final completed = logs.where((l) => l.status == 'completed').length;
+                final filtered =
+                    _status == 'all' ? logs : logs.where((l) => l.status == _status).toList();
+                return ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    _SummaryCards(
+                      total: logs.length,
+                      totalTime: formatMinutes(totalMin),
+                      inProgress: inProgress,
+                      completed: completed,
                     ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(children: [
+                        for (final e in const {
+                          'all': 'All',
+                          'in_progress': 'Active',
+                          'on_hold': 'On Hold',
+                          'completed': 'Done',
+                        }.entries)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(e.value),
+                              selected: _status == e.key,
+                              onSelected: (_) => setState(() => _status = e.key),
+                            ),
+                          ),
+                      ],),
+                    ),
+                    const SizedBox(height: 8),
+                    if (filtered.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(child: Text('No log entries for this day.')),
+                      )
+                    else
+                      for (final l in filtered) _LogCard(log: l, editable: true),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -164,6 +212,54 @@ class _MyLogView extends ConsumerWidget {
         ].join(','),
     ];
     await _share('my-logs', '\u{FEFF}${rows.join('\n')}', messenger);
+  }
+}
+
+/// Day summary cards for My Log (web parity: Total Logs, Total Time,
+/// In Progress, Completed).
+class _SummaryCards extends StatelessWidget {
+  const _SummaryCards({
+    required this.total,
+    required this.totalTime,
+    required this.inProgress,
+    required this.completed,
+  });
+  final int total;
+  final String totalTime;
+  final int inProgress;
+  final int completed;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget card(IconData icon, String value, String label, Color color) => Expanded(
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: Column(
+                children: [
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(height: 4),
+                  Text(value,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,),
+                  Text(label,
+                      style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      textAlign: TextAlign.center,),
+                ],
+              ),
+            ),
+          ),
+        );
+
+    return Row(
+      children: [
+        card(Icons.list_alt, '$total', 'Total Logs', const Color(0xFF1FA8C9)),
+        card(Icons.timer_outlined, totalTime, 'Total Time', const Color(0xFF0D6B82)),
+        card(Icons.play_circle_outline, '$inProgress', 'In Progress', const Color(0xFFD97706)),
+        card(Icons.check_circle_outline, '$completed', 'Completed', const Color(0xFF16A34A)),
+      ],
+    );
   }
 }
 

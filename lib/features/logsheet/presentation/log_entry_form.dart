@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/attendance_time.dart';
 import '../data/log_models.dart';
 import '../data/logsheet_providers.dart';
 
@@ -52,9 +53,18 @@ class _LogEntryFormState extends ConsumerState<_LogEntryForm> {
     _notes = TextEditingController(text: e?.notes ?? '');
     _clientId = e?.clientId;
     _department = e?.department;
-    _start = e?.startTime;
+    // Web parity (handleOpenAddDialog): a NEW log defaults its start time to
+    // "now" (NPT), so a clocked-in user need not set it manually. Editing keeps
+    // the saved value.
+    _start = e != null ? e.startTime : _nowNptHm();
     _end = e?.endTime;
     if (_clientId != null) _loadAlerts(_clientId!);
+  }
+
+  /// Current wall-clock time in NPT as HH:mm (matches the web's nowInTz()).
+  static String _nowNptHm() {
+    final npt = DateTime.now().toUtc().add(NptTime.offset);
+    return '${npt.hour.toString().padLeft(2, '0')}:${npt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -131,6 +141,23 @@ class _LogEntryFormState extends ConsumerState<_LogEntryForm> {
     }
   }
 
+  /// Searchable client picker (web ClientCombobox parity): filter by client
+  /// name or code so the user never scrolls a long list.
+  Future<void> _pickClient(List<Client> clients) async {
+    final selected = await showModalBottomSheet<({bool clear, String? id})>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _ClientPickerSheet(clients: clients, current: _clientId),
+    );
+    if (selected == null) return; // dismissed
+    setState(() {
+      _clientId = selected.clear ? null : selected.id;
+      _alerts = const [];
+    });
+    if (_clientId != null) _loadAlerts(_clientId!);
+  }
+
   Future<void> _addClient() async {
     final created = await showDialog<bool>(
       context: context,
@@ -165,22 +192,27 @@ class _LogEntryFormState extends ConsumerState<_LogEntryForm> {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<String?>(
-                  initialValue: _clientId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Client (optional)'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('No client')),
-                    for (final c in clients)
-                      DropdownMenuItem(value: c.id, child: Text(c.display, overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) {
-                    setState(() {
-                      _clientId = v;
-                      _alerts = const [];
-                    });
-                    if (v != null) _loadAlerts(v);
-                  },
+                child: InkWell(
+                  onTap: () => _pickClient(clients),
+                  borderRadius: BorderRadius.circular(8),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Client (optional)',
+                      suffixIcon: Icon(Icons.search, size: 18),
+                    ),
+                    child: Builder(builder: (_) {
+                      final matches = clients.where((c) => c.id == _clientId);
+                      final sel = (_clientId == null || matches.isEmpty) ? null : matches.first;
+                      return Text(
+                        sel?.display ?? 'No client',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: sel == null ? theme.colorScheme.onSurfaceVariant : null,
+                        ),
+                      );
+                    },),
+                  ),
                 ),
               ),
               IconButton(
@@ -270,6 +302,86 @@ class _LogEntryFormState extends ConsumerState<_LogEntryForm> {
       child: InputDecorator(
         decoration: InputDecoration(labelText: label, suffixIcon: const Icon(Icons.schedule, size: 18)),
         child: Text(value ?? 'Not set'),
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet client picker with a live search box (name or code).
+class _ClientPickerSheet extends StatefulWidget {
+  const _ClientPickerSheet({required this.clients, this.current});
+  final List<Client> clients;
+  final String? current;
+
+  @override
+  State<_ClientPickerSheet> createState() => _ClientPickerSheetState();
+}
+
+class _ClientPickerSheetState extends State<_ClientPickerSheet> {
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final filtered = widget.clients.where((c) {
+      if (_q.isEmpty) return true;
+      final hay = '${c.name} ${c.code ?? ''}'.toLowerCase();
+      return hay.contains(_q);
+    }).toList();
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Select client', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      hintText: 'Search by name or code…',
+                    ),
+                    onChanged: (v) => setState(() => _q = v.toLowerCase()),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
+                    dense: true,
+                    leading: Icon(widget.current == null ? Icons.check_circle : Icons.circle_outlined,
+                        size: 18, color: widget.current == null ? theme.colorScheme.primary : null,),
+                    title: const Text('No client'),
+                    onTap: () => Navigator.pop(context, (clear: true, id: null)),
+                  ),
+                  for (final c in filtered)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(c.id == widget.current ? Icons.check_circle : Icons.circle_outlined,
+                          size: 18, color: c.id == widget.current ? theme.colorScheme.primary : null,),
+                      title: Text(c.name),
+                      subtitle: (c.code != null && c.code!.isNotEmpty) ? Text(c.code!) : null,
+                      onTap: () => Navigator.pop(context, (clear: false, id: c.id)),
+                    ),
+                  if (filtered.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: Text('No clients match.')),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

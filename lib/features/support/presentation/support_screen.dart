@@ -225,13 +225,13 @@ class _GrievancesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(grievancesProvider);
     final auth = ref.watch(authControllerProvider);
-    final perms = ref.watch(permissionsControllerProvider);
     final isManager = grievanceIsManager(ref);
-    final canSubmit = isManager || perms.has(Permission.submitGrievances) || auth.isAdmin || auth.isVp;
 
     return _ListScaffold(
       newLabel: 'New grievance',
-      canCreate: canSubmit,
+      // Native grievance submission is intentionally disabled on mobile to match
+      // the web app, which collects grievances only via the Google Form below.
+      canCreate: false,
       onCreate: () => _showGrievanceForm(context, ref),
       onRefresh: () async {
         ref.invalidate(grievancesProvider);

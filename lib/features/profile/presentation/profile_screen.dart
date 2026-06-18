@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/shell/app_drawer.dart';
 import '../../../core/auth/auth_controller.dart';
@@ -65,6 +66,21 @@ class ProfileScreen extends ConsumerWidget {
                             ? Text(p.initials, style: theme.textTheme.headlineMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer))
                             : null,
                       ),
+                      const SizedBox(height: 8),
+                      // Photo actions: Add (no photo) / Change + Remove (has photo).
+                      Wrap(spacing: 8, alignment: WrapAlignment.center, children: [
+                        TextButton.icon(
+                          icon: Icon(p.avatarUrl == null ? Icons.add_a_photo_outlined : Icons.photo_camera_outlined, size: 18),
+                          label: Text(p.avatarUrl == null ? 'Add Profile Photo' : 'Change Photo'),
+                          onPressed: () => _changePhoto(context, ref),
+                        ),
+                        if (p.avatarUrl != null)
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            label: const Text('Remove Photo'),
+                            onPressed: () => _removePhoto(context, ref, p.avatarPath),
+                          ),
+                      ],),
                       const SizedBox(height: 10),
                       Text(p.fullName.isEmpty ? 'Unnamed' : p.fullName,
                           style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),),
@@ -109,6 +125,38 @@ class ProfileScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  Future<void> _changePhoto(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, maxWidth: 1024, imageQuality: 85);
+    if (picked == null) return;
+    try {
+      final bytes = await picked.readAsBytes();
+      if (bytes.lengthInBytes > 5 * 1024 * 1024) {
+        messenger.showSnackBar(const SnackBar(content: Text('Image must be under 5MB.')));
+        return;
+      }
+      final ext = picked.name.split('.').last.toLowerCase();
+      final safeExt = ['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(ext) ? ext : 'jpg';
+      await ref.read(profileRepositoryProvider).uploadAvatar(bytes, safeExt);
+      ref.invalidate(profileProvider);
+      messenger.showSnackBar(const SnackBar(content: Text('Profile photo updated.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    }
+  }
+
+  Future<void> _removePhoto(BuildContext context, WidgetRef ref, String? path) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(profileRepositoryProvider).removeAvatar(path);
+      ref.invalidate(profileProvider);
+      messenger.showSnackBar(const SnackBar(content: Text('Profile photo removed.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Remove failed: $e')));
+    }
   }
 
   Widget _section(ThemeData theme, String title, List<Widget> rows) => Card(

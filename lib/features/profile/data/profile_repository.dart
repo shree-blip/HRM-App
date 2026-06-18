@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/supabase/supabase_client.dart';
@@ -123,6 +125,33 @@ class ProfileRepository {
     } catch (_) {
       // Best-effort; the profile save itself already succeeded.
     }
+  }
+
+  /// Upload a profile photo to the `avatars` bucket (web parity: deletes old,
+  /// path `<uid>/avatar-<ts>.<ext>`, stores the path in profiles.avatar_url).
+  Future<void> uploadAvatar(Uint8List bytes, String ext) async {
+    final prof = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('user_id', _uid)
+        .maybeSingle();
+    final old = prof?['avatar_url'] as String?;
+    if (old != null && old.isNotEmpty) {
+      try {
+        final p = old.contains('/avatars/') ? old.split('/avatars/').last : old;
+        await supabase.storage.from('avatars').remove([p]);
+      } catch (_) {}
+    }
+    final path = '$_uid/avatar-${DateTime.now().toUtc().millisecondsSinceEpoch}.$ext';
+    await supabase.storage.from('avatars').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+    await supabase.from('profiles').update({
+      'avatar_url': path,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('user_id', _uid);
   }
 
   Future<void> removeAvatar(String? path) async {
